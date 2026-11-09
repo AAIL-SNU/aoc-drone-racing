@@ -23,6 +23,7 @@ sample becomes one frame and the clip plays back at wall-clock speed whatever
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 import sys
 
@@ -34,7 +35,10 @@ from quad_race.track import track_from_dict  # noqa: E402
 from race import output  # noqa: E402
 from race.cameras import add_chase_camera, add_fpv_camera, add_overhead_camera  # noqa: E402
 from race.scene import add_lighting, build_course, mark_passed  # noqa: E402
-from race.vehicle import DRONE_COLORS, animate, animate_props, build_drone, build_trail  # noqa: E402
+from race.vehicle import (DRONE_COLORS, animate, animate_props, build_drone,  # noqa: E402
+                          build_trail, load_drone, prepared_path)
+
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 DRONE_SCALE = 1.0
 
@@ -48,12 +52,39 @@ def parse_args():
     parser.add_argument("-o", "--output", help="MP4 path (default: alongside the first log)")
     parser.add_argument("--cam", choices=("chase", "fpv", "overhead"), default=None,
                         help="Render this one view full frame instead of the three-pane default")
-    parser.add_argument("--res", default="1920x1080")
-    parser.add_argument("--stride", type=int, default=1,
+    parser.add_argument("--res", default="1920x1080",
+                        help="Nearly free to raise: 2.25x the pixels of 720p costs about 15%% more, "
+                             "because the per-frame cost is scene work rather than shading")
+    parser.add_argument("--drone", nargs="?", const=str(ASSETS / "drone.blend"), default=None,
+                        help="Use a downloaded model instead of the built-in airframe; "
+                             "bare flag takes tools/assets/drone.blend")
+    parser.add_argument("--env", nargs="?", const=str(ASSETS / "env.exr"), default=None,
+                        help="Light the scene from an HDRI; bare flag takes tools/assets/env.exr")
+    parser.add_argument("--stride", type=int, default=2,
                         help="Render every Nth sample and drop the frame rate to match. The clip "
                              "keeps real-time pacing and costs N times less; this is the one knob "
-                             "that scales linearly")
+                             "that scales linearly. 2 gives 25 fps, 4 gives 12.5")
     return parser.parse_args(argv)
+
+
+def ensure_prepared(model):
+    """Build the merged cache for a model if it is missing or out of date.
+
+    Preparing needs a scene of its own, so it runs as a subprocess rather than
+    inside this render. Without the cache the renderer still works - it merges at
+    load time instead - but the merge is what takes the model from 1.6 s/frame to
+    0.21, so it is worth never leaving to chance.
+    """
+    cache = prepared_path(model)
+    if cache.exists() and cache.stat().st_mtime >= model.stat().st_mtime:
+        return
+    script = Path(__file__).resolve().parent / "prepare_assets.py"
+    print(f"[render] preparing {model.name} -> {cache.name} (one time)")
+    result = subprocess.run([sys.executable, str(script), str(model)],
+                            capture_output=True, text=True)
+    if result.returncode or not cache.exists():
+        print(f"[render] preparation failed, merging at load time instead\n"
+              f"{result.stderr.strip()[:400]}")
 
 
 def main():
@@ -75,14 +106,23 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
 
+    for flag, value in (("--drone", args.drone), ("--env", args.env)):
+        if value and not Path(value).exists():
+            raise SystemExit(f"{flag}: {value} not found; run python tools/fetch_assets.py")
+    if args.drone:
+        ensure_prepared(Path(args.drone))
+
     track = track_from_dict(logs[0]["config"]["track"])
     gate_materials, _ = build_course(track)
-    add_lighting(track)
+    add_lighting(track, args.env)
 
     leader = None
     for index, log in enumerate(logs):
         color = DRONE_COLORS[index % len(DRONE_COLORS)]
-        drone, props = build_drone(f"drone_{index}", color, DRONE_SCALE)
+        if args.drone:
+            drone, props = load_drone(args.drone, f"drone_{index}", DRONE_SCALE)
+        else:
+            drone, props = build_drone(f"drone_{index}", color, DRONE_SCALE)
         animate(drone, log["samples"])
         animate_props(props, log["samples"], args.fps)
         build_trail(f"trail_{index}", log["samples"], color)

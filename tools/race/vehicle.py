@@ -5,6 +5,8 @@ a root empty with uniform scale plus four spinnable prop hubs drops straight in.
 """
 
 import math
+from pathlib import Path
+import re
 
 import bpy
 from mathutils import Matrix, Vector
@@ -154,3 +156,148 @@ def build_trail(name, samples, color):
         for point in curve_data.keyframe_points:
             point.interpolation = "LINEAR"
     return trail
+
+
+# --- imported assets ---------------------------------------------------------
+
+# The BlenderKit "FPV Drone" measures 0.294 m across its motor shafts, carries its
+# cameras on -Y, and sits with the frame 17.8 mm above its own origin. These three
+# numbers are what turn it into something ``animate`` can drive.
+ASSET_NOSE_YAW = math.pi / 2     # the model's -Y is our +X
+ASSET_LIFT_M = -0.0178           # put the frame centre on the logged position
+# "motor 1".."motor 4" are the spinning bells with the blades attached; the
+# stationary stators live in a separate "Motor iner parts" mesh, so matching on
+# the numbered names alone keeps the fixed half of each motor still.
+ASSET_PROP_PATTERN = re.compile(r"^motor\s*\d+$", re.IGNORECASE)
+PREPARED_MARK = "aoc_prepared"
+PROP_MARK = "aoc_prop"
+
+
+def _append(path):
+    """Append every object from a .blend and return (root, all appended)."""
+    scene = bpy.context.scene
+    before = {object_ for object_ in bpy.data.objects}
+    with bpy.data.libraries.load(str(path)) as (source, target):
+        target.objects = list(source.objects)
+    appended = [object_ for object_ in bpy.data.objects if object_ not in before]
+    for object_ in appended:
+        scene.collection.objects.link(object_)
+    tops = [object_ for object_ in appended if object_.parent is None]
+    if len(tops) != 1:
+        raise SystemExit(f"{path}: expected one root object, found {[t.name for t in tops]}")
+    bpy.context.view_layer.update()
+    return tops[0], appended
+
+
+def _normalize(asset, appended):
+    """Turn a freshly appended model into the shape the renderer drives.
+
+    The join is the whole ballgame. Left as 24 separate objects the model costs
+    1.61 s/frame; merged into one body plus four rotors it costs 0.216, which is
+    what the hand-built airframe costs. Materials barely matter (31 of them down
+    to 1 only bought 1.4x) and 95k triangles are nothing - it is the per-object
+    work, repeated for every motion-blur substep, that adds up.
+    """
+    motors = sorted((object_ for object_ in appended
+                     if object_.type == "MESH" and ASSET_PROP_PATTERN.match(object_.name)),
+                    key=lambda object_: object_.name)
+    if len(motors) != 4:
+        raise SystemExit(f"matched {len(motors)} rotor meshes, need 4")
+
+    # Hubs go in while the asset still sits at the origin unrotated, so a motor's
+    # world position is also its position in the asset's own frame.
+    props = []
+    for index, motor in enumerate(motors):
+        hub = bpy.data.objects.new(f"prop_{index}", None)
+        hub.empty_display_size = 0.03
+        bpy.context.scene.collection.objects.link(hub)
+        hub.parent = asset
+        hub.matrix_parent_inverse = Matrix.Identity(4)
+        hub.location = motor.matrix_world.translation.copy()
+        hub.rotation_mode = "XYZ"
+        hub[PROP_MARK] = index
+        bpy.context.view_layer.update()
+        keep = motor.matrix_world.copy()
+        motor.parent = hub
+        motor.matrix_parent_inverse = hub.matrix_world.inverted()
+        motor.matrix_world = keep
+        props.append(hub)
+
+    bodies = [object_ for object_ in appended
+              if object_.type == "MESH" and object_ not in motors]
+    if len(bodies) > 1:
+        bpy.ops.object.select_all(action="DESELECT")
+        for body in bodies:
+            body.select_set(True)
+        bpy.context.view_layer.objects.active = bodies[0]
+        bpy.ops.object.join()
+
+    asset.rotation_mode = "XYZ"
+    asset.rotation_euler = (0.0, 0.0, ASSET_NOSE_YAW)
+    asset.location = (0.0, 0.0, ASSET_LIFT_M)
+    asset[PREPARED_MARK] = 1
+    bpy.context.view_layer.update()
+    return props
+
+
+def prepare_drone(source, destination):
+    """Bake the append-and-normalize work into a .blend the renderer can reuse."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    asset, appended = _append(source)
+    props = _normalize(asset, appended)
+    # Joining leaves the merged-away meshes and their materials behind as
+    # orphans; saving them doubles the file and costs more to load than the join
+    # saved in the first place.
+    bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    meshes = sum(1 for object_ in bpy.data.objects if object_.type == "MESH")
+    # Blender keeps a .blend1 of whatever it overwrites; for a 16 MB cache that
+    # is just a second copy of derived data sitting in the assets folder.
+    bpy.context.preferences.filepaths.save_version = 0
+    bpy.ops.wm.save_as_mainfile(filepath=str(destination), compress=True)
+    return meshes, len(props)
+
+
+def prepared_path(path):
+    path = Path(path)
+    return path.with_name(f"{path.stem}_prepared.blend")
+
+
+def load_drone(path, name, scale=1.0):
+    """Append a drone model under the same contract as build_drone.
+
+    Prefers the merged cache next to the model. The cache is derived data, so a
+    missing, stale, or unreadable one only costs the merge, never the render.
+    """
+    path = Path(path)
+    cache = prepared_path(path)
+    if cache.exists() and cache.stat().st_mtime >= path.stat().st_mtime:
+        try:
+            asset, appended = _append(cache)
+        except Exception as problem:
+            print(f"[render] ignoring unusable {cache.name} ({problem}); merging {path.name}")
+        else:
+            if asset.get(PREPARED_MARK):
+                return _wrap(asset, name, scale, _marked_props(appended, cache))
+            print(f"[render] {cache.name} is not a prepared file; merging {path.name}")
+
+    asset, appended = _append(path)
+    return _wrap(asset, name, scale, _normalize(asset, appended))
+
+
+def _marked_props(appended, path):
+    props = sorted((o for o in appended if PROP_MARK in o.keys()), key=lambda o: o[PROP_MARK])
+    if len(props) != 4:
+        raise SystemExit(f"{path}: prepared file carries {len(props)} rotors, need 4")
+    return props
+
+
+def _wrap(asset, name, scale, props):
+    """Hang the model off a root empty that carries nothing but a uniform scale."""
+    root = bpy.data.objects.new(name, None)
+    root.empty_display_size = 0.12
+    root.scale = (scale, scale, scale)
+    bpy.context.scene.collection.objects.link(root)
+    asset.parent = root
+    asset.matrix_parent_inverse = Matrix.Identity(4)
+    bpy.context.view_layer.update()
+    return root, props

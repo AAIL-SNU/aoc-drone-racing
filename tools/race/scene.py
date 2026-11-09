@@ -69,7 +69,7 @@ def build_course(track):
     """Gates, obstacles and ground, all sized from the track. Returns gate materials."""
     gate_materials = []
     for index, gate in enumerate(track.gates):
-        material = glowing(f"gate_{index}", GATE_UPCOMING, strength=1.7)
+        material = glowing(f"gate_{index}", GATE_UPCOMING, strength=4.4)
         gate_materials.append(material)
         # frame_boxes returns the four bars in gate-local coordinates, which is also
         # exactly what the collision rules test against.
@@ -94,10 +94,15 @@ def build_course(track):
     return gate_materials, ground
 
 
-def mark_passed(material, frame, *, base=1.7, peak=11.0, decay=18):
+def mark_passed(material, frame, *, base=4.4, peak=28.0, decay=18):
     """Flash a gate as the vehicle crosses it, then leave it green for good.
 
     Same read as the Matplotlib view: green is behind you, blue is still ahead.
+
+    The base strength is set against the HDRI lit scene: the environment map
+    raises the floor from 18 to 32 and the sky from 14 to 73 (of 255), which cuts
+    the gate-to-floor contrast from 6.3 to 3.6. Running the gates at 4.4 instead
+    of 1.7 puts that back to 4.7.
     """
     emission = material.node_tree.nodes["Emission"]
     strength, color = emission.inputs["Strength"], emission.inputs["Color"]
@@ -109,17 +114,31 @@ def mark_passed(material, frame, *, base=1.7, peak=11.0, decay=18):
         color.keyframe_insert("default_value", frame=at)
 
 
-def add_lighting(track):
+def add_lighting(track, hdri=None, strength=0.45):
+    """Light the venue. With no HDRI this is a dark room built from two lamps.
+
+    An environment map replaces the flat background, but it has to stay dim: the
+    neon reads because the surroundings are nearly black, and a bright sky washes
+    the gates out. The lamps stay on either way, because EEVEE wants a real light
+    for the shadows that sell the vehicle against the floor.
+    """
     world = bpy.data.worlds.new("world")
     world.use_nodes = True
-    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.004, 0.006, 0.013, 1.0)
+    background = world.node_tree.nodes["Background"]
+    if hdri:
+        environment = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
+        environment.image = bpy.data.images.load(str(hdri))
+        world.node_tree.links.new(environment.outputs["Color"], background.inputs["Color"])
+        background.inputs["Strength"].default_value = strength
+    else:
+        background.inputs["Color"].default_value = (0.004, 0.006, 0.013, 1.0)
     bpy.context.scene.world = world
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
     sun.data.energy, sun.data.angle = 1.6, math.radians(8.0)
     sun.rotation_euler = (math.radians(50.0), 0.0, math.radians(35.0))
     bpy.context.scene.collection.objects.link(sun)
-    center = (Vector(track.bounds.lower) + Vector(track.bounds.upper)) / 2
+    centre = (Vector(track.bounds.lower) + Vector(track.bounds.upper)) / 2
     fill = bpy.data.objects.new("fill", bpy.data.lights.new("fill", "AREA"))
     fill.data.energy, fill.data.size = 420.0, 12.0
-    fill.location = (center.x, center.y, track.bounds.upper[2] + 4.0)
+    fill.location = (centre.x, centre.y, track.bounds.upper[2] + 4.0)
     bpy.context.scene.collection.objects.link(fill)

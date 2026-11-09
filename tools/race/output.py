@@ -11,7 +11,7 @@ import subprocess
 import bpy
 
 RENDER_SAMPLES = 16
-BLUR_STEPS = 8          # fewer and the propellers stop reading as discs
+BLUR_STEPS = 4          # 8 is indistinguishable; 2 starts to strobe the blades
 BLUR_SHUTTER = 0.55
 BLOOM_STRENGTH = 0.55
 
