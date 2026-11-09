@@ -60,6 +60,9 @@ def parse_args():
                              "bare flag takes tools/assets/drone.blend")
     parser.add_argument("--env", nargs="?", const=str(ASSETS / "env.exr"), default=None,
                         help="Light the scene from an HDRI; bare flag takes tools/assets/env.exr")
+    parser.add_argument("--arena", action="store_true",
+                        help="Add a floor grid and perimeter pylons. The ground plate is "
+                             "separate: it is laid whenever --env is absent")
     parser.add_argument("--stride", type=int, default=2,
                         help="Render every Nth sample and drop the frame rate to match. The clip "
                              "keeps real-time pacing and costs N times less; this is the one knob "
@@ -113,7 +116,8 @@ def main():
         ensure_prepared(Path(args.drone))
 
     track = track_from_dict(logs[0]["config"]["track"])
-    gate_materials, _ = build_course(track)
+    # An HDRI supplies its own terrain, so the plate would only bury it.
+    gate_materials = build_course(track, arena=args.arena, ground=not args.env)
     add_lighting(track, args.env)
 
     leader = None

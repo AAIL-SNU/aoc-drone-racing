@@ -26,11 +26,11 @@ TARGETS = Path(__file__).resolve().parent / "assets"
 # originals, which is the difference between a usable scene and a stalled one.
 ASSETS = {
     "env": {
-        "base_id": "3c88eaa8-240a-4816-a082-11a8e89a6695",
+        "base_id": "1a83ff4b-fc1c-42b3-ac9c-c92b1e9ccce7",
         "asset_type": "hdr",
         "variant": "resolution_4K",
         "filename": "env.exr",
-        "note": "Moon night dark sea - CC0, Free poly",
+        "note": "Aarfontein Sunrise - CC0, Poly Haven",
     },
     "drone": {
         "base_id": "53f618e7-310a-4118-b218-c116efcca5d2",

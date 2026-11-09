@@ -10,10 +10,11 @@ import bpy
 from mathutils import Euler, Matrix, Vector
 
 
-def add_chase_camera(logs, *, back=1.7, up=0.55, smoothing=0.12):
+def add_chase_camera(logs, *, back=2.2, up=0.0, smoothing=0.12):
     """Trail the field from behind, pulling back far enough to hold all of it.
 
-    With one machine this sits 1.7 m off its tail. With several it tracks their
+    With one machine this sits 2.2 m off its tail, level with it so the
+    environment's horizon stays in frame. With several it tracks their
     centroid and backs off by however far they have spread, so a trailing drone
     does not simply drop out of frame.
     """
