@@ -1,0 +1,15 @@
+# Rendering only. Separate from environment.yml because bpy ships no cp312 wheel,
+# while the simulator is pinned to Python 3.12. Nothing here is needed to run or
+# score a controller.
+#
+#   conda env create -f environment-render.yml
+#   conda run -n aoc-render python tools/render_blender.py outputs/run.json
+name: aoc-render
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - pip
+  - pip:
+      - bpy==4.5.15
