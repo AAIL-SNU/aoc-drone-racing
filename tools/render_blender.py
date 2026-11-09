@@ -12,6 +12,10 @@ A ``blender`` binary works too, if one is around:
 
     blender -b -P tools/render_blender.py -- outputs/run.json --cam fpv
 
+By default this lays three views out in one frame: chase on the left, with the
+overhead and FPV feeds stacked down the right. Pass ``--cam`` to render a single
+view full frame instead.
+
 Everything in the scene comes from the log. Samples are logged at 50 Hz, so one
 sample becomes one frame and the clip plays back at wall-clock speed whatever
 ``--stride`` is set to.
@@ -42,10 +46,8 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="render_blender.py", description=__doc__)
     parser.add_argument("logs", nargs="+", help="Run logs; the first one supplies the course")
     parser.add_argument("-o", "--output", help="MP4 path (default: alongside the first log)")
-    parser.add_argument("--cam", choices=("chase", "fpv", "overhead"), default="chase",
-                        help="Ignored when --layout is broadcast, which uses all three")
-    parser.add_argument("--layout", choices=("single", "broadcast"), default="single",
-                        help="broadcast puts chase on the left with overhead and FPV stacked right")
+    parser.add_argument("--cam", choices=("chase", "fpv", "overhead"), default=None,
+                        help="Render this one view full frame instead of the three-pane default")
     parser.add_argument("--res", default="1920x1080")
     parser.add_argument("--stride", type=int, default=1,
                         help="Render every Nth sample and drop the frame rate to match. The clip "
@@ -104,7 +106,7 @@ def main():
     print(f"[render] {track.name}: {len(track.gates)} gates, {frames} frames @ {args.fps} fps, "
           f"status={summary['status']} score={summary['score_s']:.2f}s -> {args.output}")
 
-    if args.layout == "single":
+    if args.cam:
         output.setup_render(scene, args, frames, camera_for(args.cam), args.res, args.output)
         bpy.ops.render.render(animation=True)
         return
