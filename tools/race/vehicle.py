@@ -158,6 +158,95 @@ def build_trail(name, samples, color):
     return trail
 
 
+CONTACT_RADIUS_M = 0.40      # the patch at touchdown
+CONTACT_SPREAD = 0.11        # how much wider it gets per metre of altitude
+CONTACT_DARKNESS = 0.75      # opacity directly under the vehicle
+CONTACT_FADE_M = 5.0         # altitude at which it has faded to 1/e
+
+
+def build_contact_shadow(name, samples):
+    """A soft dark patch under the vehicle, tracking it along the ground.
+
+    Not a sun shadow. The HDRI this renders under is a sunrise whose sun sits a
+    tenth of a degree above the horizon, so the real shadow is tens of metres
+    long and horizontal - it is never under the vehicle, and a second sun hung
+    somewhere more convenient would light the course from a direction the sky
+    visibly contradicts. What *is* under the vehicle is the sky it blocks: the
+    ground there sees less of a very bright dome. That is what this draws, and
+    it is why it sits directly below rather than off to one side.
+
+    It widens and fades with altitude, the way an occlusion patch does.
+    """
+    bpy.ops.mesh.primitive_plane_add(size=2.0)
+    patch = bpy.context.object
+    patch.name = name
+    patch.visible_shadow = False
+    patch.data.materials.append(_contact_material(name))
+
+    for index, sample in enumerate(samples):
+        x, y, z = sample["position_m"]
+        height = max(z, 0.0)
+        radius = CONTACT_RADIUS_M + CONTACT_SPREAD * height
+        patch.location = (x, y, 0.02)
+        patch.scale = (radius, radius, 1.0)
+        patch.color = (1.0, 1.0, 1.0,
+                       CONTACT_DARKNESS * math.exp(-height / CONTACT_FADE_M))
+        frame = index + 1
+        patch.keyframe_insert("location", frame=frame)
+        patch.keyframe_insert("scale", frame=frame)
+        patch.keyframe_insert("color", frame=frame)
+    for fcurve in patch.animation_data.action.fcurves:
+        for point in fcurve.keyframe_points:
+            point.interpolation = "LINEAR"
+    return patch
+
+
+def _contact_material(name):
+    """Black, transparent, softest at the rim. Opacity comes from object colour."""
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    tree = material.node_tree
+    bsdf = tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    bsdf.inputs["Roughness"].default_value = 1.0
+
+    coordinates = tree.nodes.new("ShaderNodeTexCoord")
+    centre = tree.nodes.new("ShaderNodeMapping")
+    # Generated runs 0..1 over the plane; scale first, then shift, so the centre
+    # of the patch lands on the centre of the gradient.
+    centre.inputs["Location"].default_value = (-1.0, -1.0, 0.0)
+    centre.inputs["Scale"].default_value = (2.0, 2.0, 0.0)
+    falloff = tree.nodes.new("ShaderNodeTexGradient")
+    falloff.gradient_type = "SPHERICAL"
+    shape = tree.nodes.new("ShaderNodeMapRange")
+    shape.interpolation_type = "SMOOTHSTEP"
+    shape.inputs["From Min"].default_value = 0.0
+    shape.inputs["From Max"].default_value = 0.75
+    info = tree.nodes.new("ShaderNodeObjectInfo")
+    opacity = tree.nodes.new("ShaderNodeMath")
+    opacity.operation = "MULTIPLY"
+    tree.links.new(coordinates.outputs["Generated"], centre.inputs["Vector"])
+    tree.links.new(centre.outputs["Vector"], falloff.inputs["Vector"])
+    tree.links.new(falloff.outputs["Fac"], shape.inputs["Value"])
+    tree.links.new(shape.outputs["Result"], opacity.inputs[0])
+    # Keyframing the object's alpha is cheaper than animating a shader value and
+    # survives the material being shared between vehicles.
+    alpha = info.outputs.get("Alpha")
+    if alpha is None:
+        separate = tree.nodes.new("ShaderNodeSeparateColor")
+        tree.links.new(info.outputs["Color"], separate.inputs["Color"])
+        alpha = separate.outputs["Red"]
+    tree.links.new(alpha, opacity.inputs[1])
+    tree.links.new(opacity.outputs["Value"], bsdf.inputs["Alpha"])
+
+    if hasattr(material, "surface_render_method"):
+        material.surface_render_method = "BLENDED"   # EEVEE Next
+    else:
+        material.blend_method = "BLEND"
+    return material
+
+
+
 # --- imported assets ---------------------------------------------------------
 
 # The BlenderKit "FPV Drone" measures 0.294 m across its motor shafts, carries its

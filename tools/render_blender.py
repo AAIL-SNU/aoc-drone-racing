@@ -35,8 +35,8 @@ from quad_race.track import track_from_dict  # noqa: E402
 from race import output  # noqa: E402
 from race.cameras import add_chase_camera, add_fpv_camera, add_overhead_camera  # noqa: E402
 from race.scene import add_lighting, build_course, mark_passed  # noqa: E402
-from race.vehicle import (DRONE_COLORS, animate, animate_props, build_drone,  # noqa: E402
-                          build_trail, load_drone, prepared_path)
+from race.vehicle import (DRONE_COLORS, animate, animate_props, build_contact_shadow,  # noqa: E402
+                          build_drone, build_trail, load_drone, prepared_path)
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -61,8 +61,9 @@ def parse_args():
     parser.add_argument("--env", nargs="?", const=str(ASSETS / "env.exr"), default=None,
                         help="Light the scene from an HDRI; bare flag takes tools/assets/env.exr")
     parser.add_argument("--arena", action="store_true",
-                        help="Add a floor grid and perimeter pylons. The ground plate is "
-                             "separate: it is laid whenever --env is absent")
+                        help="Add a floor grid and perimeter pylons. The floor under them "
+                             "is separate: a dark plate without --env, the HDRI's own "
+                             "terrain projected onto a plane with it")
     parser.add_argument("--stride", type=int, default=2,
                         help="Render every Nth sample and drop the frame rate to match. The clip "
                              "keeps real-time pacing and costs N times less; this is the one knob "
@@ -118,7 +119,9 @@ def main():
     track = track_from_dict(logs[0]["config"]["track"])
     # An HDRI supplies its own terrain, so the plate would only bury it.
     gate_materials = build_course(track, arena=args.arena, ground=not args.env)
-    add_lighting(track, args.env)
+    ground_material = ASSETS / "ground.blend"
+    add_lighting(track, args.env,
+                 ground_material=ground_material if ground_material.exists() else None)
 
     leader = None
     for index, log in enumerate(logs):
@@ -130,6 +133,7 @@ def main():
         animate(drone, log["samples"])
         animate_props(props, log["samples"], args.fps)
         build_trail(f"trail_{index}", log["samples"], color)
+        build_contact_shadow(f"contact_{index}", log["samples"])
         if leader is None:
             leader = drone
 

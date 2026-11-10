@@ -32,6 +32,13 @@ ASSETS = {
         "filename": "env.exr",
         "note": "Aarfontein Sunrise - CC0, Poly Haven",
     },
+    "ground": {
+        "base_id": "84deca31-2aef-4165-9b1e-cefb5c8af1ab",
+        "asset_type": "material",
+        "variant": "resolution_2K",
+        "filename": "ground.blend",
+        "note": "Dry Flattened Gravel Dirt Path - royalty-free (do not redistribute)",
+    },
     "drone": {
         "base_id": "53f618e7-310a-4118-b218-c116efcca5d2",
         "asset_type": "model",

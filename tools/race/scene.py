@@ -20,6 +20,13 @@ ARENA_GRID = (0.05, 0.20, 0.38)    # floor lines: visible, never competing with 
 ARENA_STRUCTURE = (0.035, 0.040, 0.052)
 ARENA_ACCENT = (0.10, 0.35, 0.70)
 
+GROUND_RADIUS = 3000.0   # far enough that its edge never reaches the frame
+GROUND_EYE_M = 1.6       # the tripod the panorama was shot from
+GROUND_TILE_M = 7.0      # metres per repeat of the near-field material
+GROUND_PATCH_M = 40.0    # scale of the tint that hides that repeat
+GROUND_PATCH = 0.22      # how far the tint swings either side of neutral
+GROUND_BLEND = (1.4, 4.0)  # start and end of the crossfade, as multiples of flight extent
+
 GATE_UPCOMING = (0.05, 0.45, 1.00)
 GATE_PASSED = (0.10, 1.00, 0.35)
 
@@ -194,25 +201,41 @@ def mark_passed(material, frame, *, base=4.4, peak=28.0, decay=18):
         color.keyframe_insert("default_value", frame=at)
 
 
-def add_lighting(track, hdri=None, strength=0.45):
+def add_lighting(track, hdri=None, strength=0.45, ground_material=None):
     """Light the venue. With no HDRI this is a dark room built from two lamps.
 
     An environment map replaces the flat background, but it has to stay dim: the
     neon reads because the surroundings are nearly black, and a bright sky washes
-    the gates out. The lamps stay on either way, because EEVEE wants a real light
-    for the shadows that sell the vehicle against the floor.
+    the gates out. It also brings its own sun, so the lamps stay off: this one is
+    a sunrise whose sun sits 0.1 degrees above the horizon, and a second sun put
+    anywhere else would light the course from a direction the sky contradicts.
+
+    The HDRI also gets projected onto a floor (see ``add_projected_ground``), so
+    the terrain it came with moves as the vehicle travels.
     """
     world = bpy.data.worlds.new("world")
     world.use_nodes = True
     background = world.node_tree.nodes["Background"]
     if hdri:
+        image = bpy.data.images.load(str(hdri))
         environment = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
-        environment.image = bpy.data.images.load(str(hdri))
+        environment.image = image
         world.node_tree.links.new(environment.outputs["Color"], background.inputs["Color"])
         background.inputs["Strength"].default_value = strength
     else:
         background.inputs["Color"].default_value = (0.004, 0.006, 0.013, 1.0)
     bpy.context.scene.world = world
+    if hdri:
+        low, high = Vector(track.bounds.lower), Vector(track.bounds.upper)
+        extent = max(high.x - low.x, high.y - low.y) / 2.0
+        add_projected_ground(image, extent, strength=strength,
+                             material_path=ground_material)
+    else:
+        _add_room_lamps(track)
+
+
+def _add_room_lamps(track):
+    """The two lamps the code-lit room is built from."""
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
     sun.data.energy, sun.data.angle = 1.6, math.radians(8.0)
     sun.rotation_euler = (math.radians(50.0), 0.0, math.radians(35.0))
@@ -222,3 +245,148 @@ def add_lighting(track, hdri=None, strength=0.45):
     fill.data.energy, fill.data.size = 420.0, 12.0
     fill.location = (centre.x, centre.y, track.bounds.upper[2] + 4.0)
     bpy.context.scene.collection.objects.link(fill)
+
+
+def add_projected_ground(image, extent, *, strength=0.45, radius=GROUND_RADIUS,
+                         eye_height=GROUND_EYE_M, material_path=None):
+    """Build the floor the HDRI implies, with a real material underfoot.
+
+    An environment texture is sampled by ray direction alone, so it sits at
+    infinity: translating the camera thirty metres changes not one pixel of it.
+    Projecting its lower hemisphere onto a plane - sampling each point along the
+    direction from the tripod the panorama was shot from - puts the terrain at a
+    finite distance, and it streaks past the vehicle the way the gates do.
+
+    That projection is only exact from the tripod, though. A panorama carries no
+    depth, so the plane is a guess that the ground was flat, and every bush and
+    rock that was not gets painted flat onto it. Fly away from the origin and
+    they smear. So the projection is used for the distance, where the error is
+    small and the detail is far, and ``material_path`` supplies a tiled PBR
+    material for the near field, where the vehicle actually is. That part is real
+    geometry with a real BSDF: correct from any angle, and it takes the shadow.
+
+    The crossfade is keyed to distance from the course centre rather than from
+    the camera, so the boundary is fixed in the world and nothing swims as the
+    vehicle moves. ``extent`` is the flight extent that sets its radius.
+    """
+    # A hair below zero: the arena grid lines start at exactly 0.0 and coplanar
+    # faces flicker.
+    bpy.ops.mesh.primitive_plane_add(size=radius * 2.0, location=(0.0, 0.0, -0.01))
+    plane = bpy.context.object
+    plane.name = "projected_ground"
+    material = _ground_material(image, extent, strength, eye_height, material_path)
+    plane.data.materials.append(material)
+    return plane
+
+
+def _ground_material(image, extent, strength, eye_height, material_path):
+    """Near-field PBR crossfading out to the projected panorama."""
+    material = _near_field_material(material_path)
+    if material is None:
+        material = bpy.data.materials.new("projected_ground")
+        material.use_nodes = True
+        material.node_tree.nodes.clear()
+    tree = material.node_tree
+    geometry = tree.nodes.new("ShaderNodeNewGeometry")
+
+    offset = tree.nodes.new("ShaderNodeVectorMath")
+    offset.operation = "SUBTRACT"
+    offset.inputs[1].default_value = (0.0, 0.0, eye_height)
+    direction = tree.nodes.new("ShaderNodeVectorMath")
+    direction.operation = "NORMALIZE"
+    environment = tree.nodes.new("ShaderNodeTexEnvironment")
+    environment.image = image
+    emission = tree.nodes.new("ShaderNodeEmission")
+    emission.inputs["Strength"].default_value = strength
+    tree.links.new(geometry.outputs["Position"], offset.inputs[0])
+    tree.links.new(offset.outputs["Vector"], direction.inputs[0])
+    tree.links.new(direction.outputs["Vector"], environment.inputs["Vector"])
+    tree.links.new(environment.outputs["Color"], emission.inputs["Color"])
+
+    output = next((n for n in tree.nodes if n.type == "OUTPUT_MATERIAL"), None)
+    if output is None:
+        output = tree.nodes.new("ShaderNodeOutputMaterial")
+    near = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if near is None:
+        tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+        return material
+
+    # Texture the near field in world metres, not in the plane's own UVs: the
+    # plane is kilometres wide, and world coordinates also pin the tiling in
+    # place so it cannot swim under a moving camera.
+    mapping = next((n for n in tree.nodes if n.type == "MAPPING"), None)
+    if mapping is not None:
+        for link in list(mapping.inputs["Vector"].links):
+            tree.links.remove(link)
+        tree.links.new(geometry.outputs["Position"], mapping.inputs["Vector"])
+        mapping.inputs["Scale"].default_value = (1.0 / GROUND_TILE_M,) * 3
+    # EEVEE ignores true displacement and the height map only costs a lookup.
+    for link in list(output.inputs["Displacement"].links):
+        tree.links.remove(link)
+    _break_up_tiling(tree, geometry, near)
+
+    flat = tree.nodes.new("ShaderNodeVectorMath")
+    flat.operation = "MULTIPLY"
+    flat.inputs[1].default_value = (1.0, 1.0, 0.0)
+    span = tree.nodes.new("ShaderNodeVectorMath")
+    span.operation = "LENGTH"
+    fade = tree.nodes.new("ShaderNodeMapRange")
+    fade.interpolation_type = "SMOOTHSTEP"
+    fade.inputs["From Min"].default_value = extent * GROUND_BLEND[0]
+    fade.inputs["From Max"].default_value = extent * GROUND_BLEND[1]
+    mix = tree.nodes.new("ShaderNodeMixShader")
+    tree.links.new(geometry.outputs["Position"], flat.inputs[0])
+    tree.links.new(flat.outputs["Vector"], span.inputs[0])
+    tree.links.new(span.outputs["Value"], fade.inputs["Value"])
+    tree.links.new(fade.outputs["Result"], mix.inputs["Fac"])
+    tree.links.new(near.outputs["BSDF"], mix.inputs[1])
+    tree.links.new(emission.outputs["Emission"], mix.inputs[2])
+    tree.links.new(mix.outputs["Shader"], output.inputs["Surface"])
+    return material
+
+
+def _break_up_tiling(tree, geometry, near):
+    """Swing the near-field brightness over tens of metres.
+
+    A seven-metre tile is invisible from a metre up at racing speed and obvious
+    from the overhead camera, which sees dozens of them at once. Drifting the
+    tint across a much larger noise breaks the grid without a second texture:
+    the repeat is still there, but no two patches of it read the same.
+    """
+    base = near.inputs["Base Color"]
+    if not base.links:
+        return
+    source = base.links[0].from_socket
+    noise = tree.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 1.0 / GROUND_PATCH_M
+    noise.inputs["Detail"].default_value = 2.0
+    level = tree.nodes.new("ShaderNodeMapRange")
+    level.inputs["From Min"].default_value = 0.35
+    level.inputs["From Max"].default_value = 0.65
+    level.inputs["To Min"].default_value = 1.0 - GROUND_PATCH
+    level.inputs["To Max"].default_value = 1.0 + GROUND_PATCH
+    level.clamp = True
+    # Colours multiply as vectors; this avoids a Mix node whose sockets are
+    # named the same for every data type it can carry.
+    tint = tree.nodes.new("ShaderNodeVectorMath")
+    tint.operation = "SCALE"
+    tree.links.new(geometry.outputs["Position"], noise.inputs["Vector"])
+    tree.links.new(noise.outputs["Fac"], level.inputs["Value"])
+    tree.links.new(source, tint.inputs[0])
+    tree.links.new(level.outputs["Result"], tint.inputs["Scale"])
+    tree.links.new(tint.outputs["Vector"], base)
+
+
+def _near_field_material(path):
+    """Append the downloaded ground material, or None if it is not there."""
+    if not path or not Path(path).exists():
+        return None
+    try:
+        with bpy.data.libraries.load(str(path), link=False) as (source, target):
+            target.materials = list(source.materials)
+    except Exception as problem:
+        print(f"[render] ignoring unusable {Path(path).name} ({problem})")
+        return None
+    if not target.materials:
+        return None
+    return target.materials[0]
