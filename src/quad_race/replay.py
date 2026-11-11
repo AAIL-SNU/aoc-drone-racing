@@ -70,12 +70,80 @@ def _(obstacle: Box, axes) -> np.ndarray:
     return np.array([lo, hi])
 
 
+def euler_deg(quaternions_xyzw):
+    """Roll, pitch, yaw [deg] (intrinsic Z-Y-X), with yaw unwrapped over time."""
+    yaw, pitch, roll = Rotation.from_quat(quaternions_xyzw).as_euler("ZYX").T
+    return np.degrees(np.stack((roll, pitch, np.unwrap(yaw)), axis=1))
+
+
+class AttitudePanel:
+    """Close-up chase view of the vehicle plus roll/pitch/yaw history.
+
+    The chase camera follows yaw, so roll and pitch read directly off the glyph.
+    """
+
+    COLORS = ("#c0392b", "#2e86c1", "#7d8b96")
+
+    def __init__(self, figure, pose_spec, plot_spec, times, angles_deg):
+        self.times, self.angles = np.asarray(times), np.asarray(angles_deg)
+        self.pose = figure.add_subplot(pose_spec, projection="3d")
+        r = 0.3
+        self.pose.set(xlim=(-r, r), ylim=(-r, r), zlim=(-r, r))
+        self.pose.set_box_aspect((1, 1, 1), zoom=1.15)
+        self.pose.set_axis_off()
+        self.pose.plot([-r, r], [0, 0], [0, 0], color="#c7ced4", linewidth=0.8)
+        self.pose.plot([0, 0], [-r, r], [0, 0], color="#c7ced4", linewidth=0.8)
+        self.pose.plot([0, 0], [0, 0], [-r, r], color="#c7ced4", linewidth=0.8)
+        self.glyph = VehicleGlyph(self.pose)
+        self.readout = self.pose.set_title("", fontsize=10, pad=2, family="monospace")
+
+        self.plot = figure.add_subplot(plot_spec)
+        self.traces, self.markers = [], []
+        for k, (name, color) in enumerate(zip(("roll", "pitch", "yaw"), self.COLORS)):
+            style = dict(color=color, linewidth=1.3 if k < 2 else 1.0, linestyle="-" if k < 2 else "--")
+            self.plot.plot(self.times, self.angles[:, k], alpha=0.18, **{**style, "linewidth": 1.0})
+            self.traces.append(self.plot.plot([], [], label=name, **style)[0])
+            self.markers.append(self.plot.plot([], [], "o", color=color, markersize=4)[0])
+        self.cursor = self.plot.axvline(0, color="#253744", linewidth=0.8)
+        self.plot.axhline(0, color="#c7ced4", linewidth=0.6)
+        self.plot.set(xlim=(self.times[0], max(self.times[-1], self.times[0] + 0.01)),
+                      xlabel="t [s]", ylabel="angle [deg]")
+        self.plot.grid(alpha=0.25)
+        self.plot.legend(loc="upper right", fontsize=8, ncol=3)
+        self.plot.tick_params(labelsize=8)
+        self.artists = (*self.glyph.artists, self.readout, *self.traces, *self.markers, self.cursor)
+
+    def draw(self, time_s, rotation):
+        index = int(np.searchsorted(self.times, time_s, side="right"))
+        index = max(index, 1)
+        t, a = self.times[:index], self.angles[:index]
+        for k, (trace, marker) in enumerate(zip(self.traces, self.markers)):
+            trace.set_data(t, a[:, k])
+            marker.set_data([t[-1]], [a[-1, k]])
+        self.cursor.set_xdata([time_s, time_s])
+        roll, pitch, yaw = a[-1]
+        tilt = np.degrees(np.arccos(np.clip(rotation[2, 2], -1.0, 1.0)))
+        self.glyph.transform(np.zeros(3), rotation)
+        self.pose.view_init(elev=18, azim=np.degrees(np.arctan2(rotation[1, 0], rotation[0, 0])) + 205)
+        self.readout.set_text(f"roll {roll:+6.1f}°  pitch {pitch:+6.1f}°\n"
+                              f"yaw {(yaw + 180) % 360 - 180:+6.1f}°  tilt {tilt:5.1f}°")
+
+
 class RaceView:
-    def __init__(self, track, *, live=False):
+    def __init__(self, track, *, live=False, attitude=None):
+        """attitude: optional (times_s, euler_deg) arrays; adds a pose panel."""
         import matplotlib.pyplot as plt
         self.plt, self.live = plt, live
-        self.figure = plt.figure(figsize=(10, 6))
-        self.axes = self.figure.add_subplot(111, projection="3d")
+        self.attitude = None
+        if attitude is None:
+            self.figure = plt.figure(figsize=(10, 6))
+            self.axes = self.figure.add_subplot(111, projection="3d")
+        else:
+            self.figure = plt.figure(figsize=(15, 6.5))
+            grid = self.figure.add_gridspec(2, 2, width_ratios=(1.8, 1), height_ratios=(1.25, 1),
+                                            wspace=0.06, hspace=0.22)
+            self.axes = self.figure.add_subplot(grid[:, 0], projection="3d")
+            self.attitude = AttitudePanel(self.figure, grid[0, 1], grid[1, 1], *attitude)
         ax = self.axes
         self.gates = []
         for i, gate in enumerate(track.gates):
@@ -109,7 +177,10 @@ class RaceView:
         ax.view_init(elev=27, azim=-65)
         ax.set_title("Course overview", fontsize=11, pad=5)
         ax.legend(loc="upper left", fontsize=9)
-        self.figure.subplots_adjust(left=0.02, right=0.96, bottom=0.03, top=0.87)
+        if self.attitude is None:
+            self.figure.subplots_adjust(left=0.02, right=0.96, bottom=0.03, top=0.87)
+        else:
+            self.figure.subplots_adjust(left=0.01, right=0.98, bottom=0.09, top=0.88)
         if live:
             plt.ion()
             plt.show(block=False)
@@ -132,6 +203,8 @@ class RaceView:
         self.line.set_data_3d(*points.T)
         rotation = Rotation.from_quat(self.last_item["quaternion_xyzw"]).as_matrix()
         self.drone.transform(points[-1], rotation)
+        if self.attitude is not None:
+            self.attitude.draw(self.last_item["time_s"], rotation)
         passed = self.last_item["next_gate"]
         for index, line in enumerate(self.gates):
             line.set_color("#438c55" if index < passed else "#276fa4" if index == passed else "#9ca7b0")
@@ -153,8 +226,10 @@ def replay(log_path, *, output=None, show=False, speed=2.0):
     if speed <= 0:
         raise ValueError("Replay speed must be positive")
     log = json.loads(Path(log_path).read_text())
-    view = RaceView(track_from_dict(log["config"]["track"]))
     samples = log["samples"]
+    attitude = (np.array([item["time_s"] for item in samples]),
+                euler_deg([item["quaternion_xyzw"] for item in samples]))
+    view = RaceView(track_from_dict(log["config"]["track"]), attitude=attitude)
     try:
         if output and Path(output).suffix.lower() != ".gif":
             for item in samples:
@@ -168,7 +243,7 @@ def replay(log_path, *, output=None, show=False, speed=2.0):
         def frame(index):
             view.positions = [item["position_m"] for item in samples[:index]]
             view.update(samples[index])
-            return view.line, *view.drone.artists, view.title
+            return view.line, *view.drone.artists, *view.attitude.artists, view.title
 
         animation = FuncAnimation(view.figure, frame, frames=indices, interval=1000 / 12, blit=False)
         if output:
