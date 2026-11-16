@@ -13,7 +13,7 @@ and compute limits are in **[COMPETITION.md](COMPETITION.md)** (Korean).
 | `config/tracks/`, `config/races/` | The circuit and the practice race (track + laps + disturbance) | No |
 | `src/quad_race/` | Simulator, referee, scoring, `drone-race` command | No (changes are not used for scoring) |
 | `tests/` | Tests of the simulator itself, for the organizers | No |
-| `docker/`, `.github/` | Scoring-server image and the automatic check on push | No |
+| `.github/` | The automatic check on push | No |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration, evaluations | Generated |
 
 ## Installation
@@ -129,26 +129,6 @@ percent of their actions. `examples/benchmark.py` compares controllers over seve
 ```bash
 python examples/benchmark.py --laps 1 --seeds 1 2 3
 ```
-
-## For TAs: official scoring
-
-```bash
-docker build -f docker/Dockerfile -t aoc-drone-racing:2026 .     # controller image (official pins)
-drone-race bench --write-reference                               # once, on the scoring server
-drone-race evaluate teams/ --race config/races/official.json --seed <instructor seed> \
-    --docker aoc-drone-racing:2026 --cpu 3
-```
-
-`teams/` holds one folder per team (each a copy of its `submission/`). `evaluate` runs
-the teams one at a time and writes `outputs/evaluation/logs/<team>.json` (full
-trajectory), `outputs/evaluation/stderr/<team>.txt`
-and `outputs/evaluation/leaderboard.json`.
-
-`--docker` runs each controller in the image above with no network, a read-only file
-system, one CPU and 4 GB of memory. Without it the controllers are isolated by process
-only: fair for timing, but a submission could still read files on the server (such as
-the private race file) or use the network. Fine for practice runs; use Docker for the
-official one.
 
 ## References
 
