@@ -3,14 +3,14 @@
 Needs the ``bpy`` module, which has no cp312 wheel, so it runs in its own env:
 
     conda env create -f environment-render.yml
-    env -u DISPLAY conda run -n aoc-render python tools/render_blender.py outputs/run.json
+    env -u DISPLAY conda run -n aoc-render drone-race render outputs/submission_practice.json
 
 Unsetting DISPLAY matters: with an X display set, Blender takes a software GL
 path and runs ten times slower than it does over EGL.
 
 A ``blender`` binary works too, if one is around:
 
-    blender -b -P tools/render_blender.py -- outputs/run.json --cam fpv
+    blender -b -P src/quad_race/render/blender.py -- outputs/submission_practice.json --cam fpv
 
 By default this lays three views out in one frame: chase on the left, with the
 overhead and FPV feeds stacked down the right. Pass ``--cam`` to render a single
@@ -29,13 +29,13 @@ import sys
 
 import bpy
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+# Runs as a plain script in the render env (no quad_race install there): put src/ on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from quad_race.track import track_from_dict  # noqa: E402
-from race import output  # noqa: E402
-from race.cameras import add_chase_camera, add_fpv_camera, add_overhead_camera  # noqa: E402
-from race.scene import add_lighting, build_course, mark_passed  # noqa: E402
-from race.vehicle import (DRONE_COLORS, animate, animate_props, build_contact_shadow,  # noqa: E402
+from quad_race.render import output  # noqa: E402
+from quad_race.render.cameras import add_chase_camera, add_fpv_camera, add_overhead_camera  # noqa: E402
+from quad_race.render.scene import add_lighting, build_course, mark_passed  # noqa: E402
+from quad_race.render.vehicle import (DRONE_COLORS, animate, animate_props, build_contact_shadow,  # noqa: E402
                           build_drone, build_trail, load_drone, prepared_path)
 
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -57,9 +57,9 @@ def parse_args():
                              "because the per-frame cost is scene work rather than shading")
     parser.add_argument("--drone", nargs="?", const=str(ASSETS / "drone.blend"), default=None,
                         help="Use a downloaded model instead of the built-in airframe; "
-                             "bare flag takes tools/assets/drone.blend")
+                             "bare flag takes the downloaded drone.blend")
     parser.add_argument("--env", nargs="?", const=str(ASSETS / "env.exr"), default=None,
-                        help="Light the scene from an HDRI; bare flag takes tools/assets/env.exr")
+                        help="Light the scene from an HDRI; bare flag takes the downloaded env.exr")
     parser.add_argument("--arena", action="store_true",
                         help="Add a floor grid and perimeter pylons. The floor under them "
                              "is separate: a dark plate without --env, the HDRI's own "
@@ -112,7 +112,7 @@ def main():
 
     for flag, value in (("--drone", args.drone), ("--env", args.env)):
         if value and not Path(value).exists():
-            raise SystemExit(f"{flag}: {value} not found; run python tools/fetch_assets.py")
+            raise SystemExit(f"{flag}: {value} not found; run drone-race render --fetch-assets")
     if args.drone:
         ensure_prepared(Path(args.drone))
 

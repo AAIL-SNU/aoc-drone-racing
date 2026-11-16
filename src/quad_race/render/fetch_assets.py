@@ -2,10 +2,10 @@
 
 Runs in any Python 3; it only speaks HTTP and never imports ``bpy``. The free
 and CC0 assets need no API key - the download endpoint only wants a throwaway
-``scene_uuid`` - so this is a plain fetch into ``tools/assets/``.
+``scene_uuid`` - so this is a plain fetch into ``src/quad_race/render/assets/``.
 
-    python tools/fetch_assets.py              # everything in ASSETS
-    python tools/fetch_assets.py env          # just the HDRI
+    drone-race render --fetch-assets        # everything in ASSETS
+    python -m quad_race.render.fetch_assets env   # just the HDRI
 
 Assets are deliberately NOT committed: the drone is royalty-free rather than
 CC0, which permits rendering with it but not redistributing the file itself.

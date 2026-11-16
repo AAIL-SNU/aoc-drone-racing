@@ -127,13 +127,17 @@ def _hermite(p0, p1, m0, m1, u):
 
 
 class RacingLine:
-    """Arc-length sampled path through all gates plus a feasible speed profile v(s)."""
+    """Arc-length sampled path through all gates plus a feasible speed profile v(s).
 
-    def __init__(self, track: Track, *, v_max=10.0, a_lateral=14.0, a_accel=9.0, a_brake=10.0,
+    With ``laps`` > 1 the gate sequence is repeated, so ``gate_s`` has one entry per
+    gate passage: index ``lap * len(track.gates) + next_gate``.
+    """
+
+    def __init__(self, track: Track, *, laps=1, v_max=10.0, a_lateral=14.0, a_accel=9.0, a_brake=10.0,
                  tangent_scale=1.0, lead_out_m=5.0, ds=0.05):
-        normals = [np.array([np.cos(g.yaw_rad), np.sin(g.yaw_rad), 0.0]) for g in track.gates]
+        normals = [np.array([np.cos(g.yaw_rad), np.sin(g.yaw_rad), 0.0]) for g in track.gates] * laps
         start = np.asarray(track.start, dtype=float)
-        points = [start] + [np.asarray(g.center, dtype=float) for g in track.gates]
+        points = [start] + [np.asarray(g.center, dtype=float) for g in track.gates] * laps
         points.append(points[-1] + lead_out_m * normals[-1])
         first = points[1] - start
         directions = [first / np.linalg.norm(first)] + normals + [normals[-1]]

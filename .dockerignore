@@ -1,0 +1,9 @@
+.git
+.venv
+.conda
+outputs
+results
+src/quad_race/render/assets
+demo
+**/__pycache__
+**/.DS_Store

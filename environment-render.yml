@@ -3,7 +3,7 @@
 # score a controller.
 #
 #   conda env create -f environment-render.yml
-#   conda run -n aoc-render python tools/render_blender.py outputs/run.json
+#   drone-race render outputs/submission_practice.json
 name: aoc-render
 channels:
   - conda-forge

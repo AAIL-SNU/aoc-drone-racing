@@ -10,7 +10,7 @@ Because rollouts are only evaluated, never differentiated, the cost can contain
 hard, non-smooth terms: here a large penalty for crossing a gate plane outside
 the (vehicle-radius-eroded) opening and for leaving the track bounds.
 
-Copy this file to controller.py to submit it.
+Copy this file to submission/controller.py to submit it.
 """
 
 import numpy as np
@@ -18,14 +18,14 @@ import numpy as np
 from quad_race import Action
 from quad_race.planning import DisturbanceObserver, QuadModel, RacingLine, quat_to_matrix, state_from_observation
 
-SAMPLES = 768
+SAMPLES = 512           # sized to fit the 20 ms act() budget with margin
 HORIZON = 25           # steps
 MODEL_DT = 0.04        # s, horizon = 1.0 s
 TEMPERATURE = 0.05     # lambda, relative to the median cost spread (see act)
 NOISE_STD = np.array([1.5, 1.0, 1.0, 0.6])   # thrust [N], body rates [rad/s]
 NOISE_SMOOTHING = 0.6  # first-order filter on the noise along the horizon
 THRUST_MIN = 1.5       # N, near-zero thrust leaves the rotors no authority to turn the body
-THRUST_MAX = 14.0      # N, keeps the load factor under the 3 g penalty threshold
+THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances
 # Racing-line aggressiveness (quad_race.planning.RacingLine); the main lap-time knob.
 # a_lateral above ~26 m/s^2 exceeds what THRUST_MAX can deliver, so the reference
 # runs ahead and MPPI cuts corners as far as the gate penalty allows. Finished all
@@ -49,7 +49,7 @@ class Controller:
         self.model = QuadModel(config, MODEL_DT)
         self.model.u_low[0] = max(self.model.u_low[0], THRUST_MIN)
         self.model.u_high[0] = min(self.model.u_high[0], THRUST_MAX)
-        self.line = RacingLine(config.track, **LINE)
+        self.line = RacingLine(config.track, laps=config.laps, **LINE)
         self.observer = DisturbanceObserver(config)
         self.U = np.tile([self.model.hover_thrust, 0.0, 0.0, 0.0], (HORIZON, 1))
         self.s = 0.0
@@ -63,7 +63,7 @@ class Controller:
 
     def references(self, observation, x0, d):
         gates = self.line.gate_s
-        nxt = min(observation.next_gate, len(gates) - 1)
+        nxt = min(observation.lap * len(self.gate_yaw) + observation.next_gate, len(gates) - 1)
         s_min = gates[nxt - 1] - 0.5 if nxt > 0 else 0.0
         self.s = self.line.project(x0[:3], max(s_min, self.s - 0.5), min(gates[nxt] + 1.0, self.s + 3.0))
         p_ref, v_ref, a_ref, _ = self.line.horizon(self.s, MODEL_DT, HORIZON)
@@ -99,7 +99,7 @@ class Controller:
         U = np.clip(self.U + noise, self.model.u_low, self.model.u_high)
         noise = U - self.U
 
-        gates = [g for g in (observation.next_gate, observation.next_gate + 1) if g < len(self.gate_yaw)]
+        gates = [observation.next_gate, (observation.next_gate + 1) % len(self.gate_yaw)]
         x = np.repeat(x0[None], SAMPLES, axis=0)
         cost = np.zeros(SAMPLES)
         for k in range(HORIZON):

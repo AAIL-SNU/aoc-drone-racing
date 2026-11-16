@@ -14,7 +14,7 @@ into the model through the tanh squashing, so the optimizer plans with
 saturation instead of discovering it after clipping. Dynamics and residual
 Jacobians come from batched finite differences, so the cost is easy to change.
 
-Copy this file to controller.py to submit it.
+Copy this file to submission/controller.py to submit it.
 """
 
 import numpy as np
@@ -27,7 +27,7 @@ MODEL_DT = 0.04        # s, horizon = 1.0 s
 ITERATIONS = 3         # iLQR iterations per control step (warm-started)
 LINE_SEARCH = np.array([1.0, 0.5, 0.25, 0.1])   # step sizes, evaluated together
 THRUST_MIN = 1.5       # N, near-zero thrust leaves the rotors no authority to turn the body
-THRUST_MAX = 14.0      # N, keeps the load factor under the 3 g penalty threshold
+THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances
 # Racing-line aggressiveness (quad_race.planning.RacingLine); the main lap-time knob.
 # Tuned on both shipped tracks, six random tracks and disturbed runs; a_lateral 35+ is faster on clean runs
 # but crashes under wind and mass error.
@@ -50,7 +50,7 @@ class Controller:
         self.model.u_high[0] = min(self.model.u_high[0], THRUST_MAX)
         self.u_mid = 0.5 * (self.model.u_high + self.model.u_low)
         self.u_half = 0.5 * (self.model.u_high - self.model.u_low)
-        self.line = RacingLine(config.track, **LINE)
+        self.line = RacingLine(config.track, laps=config.laps, **LINE)
         self.observer = DisturbanceObserver(config)
         hover = np.array([self.model.hover_thrust, 0.0, 0.0, 0.0])
         self.Z = np.tile(np.arctanh((hover - self.u_mid) / self.u_half), (HORIZON, 1))
@@ -166,7 +166,7 @@ class Controller:
     # ------------------------------------------------------------ interface
     def references(self, observation, x0, d):
         gates = self.line.gate_s
-        nxt = min(observation.next_gate, len(gates) - 1)
+        nxt = min(observation.lap * len(self.gate_yaw) + observation.next_gate, len(gates) - 1)
         s_min = gates[nxt - 1] - 0.5 if nxt > 0 else 0.0
         self.s = self.line.project(x0[:3], max(s_min, self.s - 0.5), min(gates[nxt] + 1.0, self.s + 3.0))
         p_ref, v_ref, a_ref, _ = self.line.horizon(self.s, MODEL_DT, HORIZON)
@@ -178,7 +178,7 @@ class Controller:
         x0 = state_from_observation(observation)
         d = self.observer.update(x0)
         refs = self.references(observation, x0, d)
-        self.funnel = [g for g in (observation.next_gate, observation.next_gate + 1) if g < len(self.gate_yaw)]
+        self.funnel = [observation.next_gate, (observation.next_gate + 1) % len(self.gate_yaw)]
         _, Z = self.solve(x0, refs, d)
         u0 = self.saturate(Z[0])
         # Warm start: shift the plan by one control period.

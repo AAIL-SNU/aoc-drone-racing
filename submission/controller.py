@@ -1,4 +1,6 @@
-"""Editable student entry point: a conservative, non-optimal gate-following baseline.
+"""Your submission: a conservative, non-optimal gate-following baseline to replace.
+
+Only the submission/ folder is collected. See COMPETITION.md for the rules.
 
 Conventions: SI units, world frame right-handed z-up, gravity (0, 0, -9.81) m/s^2,
 quaternions (x, y, z, w) rotating body -> world. Body +z is the thrust axis.
@@ -17,6 +19,9 @@ reset(config: PublicConfig) is called once before flight with:
     config.body_rate_limit_rad_s   3, per axis
     config.body_rate_gain_s_inv    25, built-in rate loop: w_dot = 25 * (w_cmd - w)
     config.vehicle_radius_m   0.28, collision sphere
+    config.laps               number of laps (10 in the competition); gate 0 follows the last gate
+    config.act_budget_s       0.02, compute budget of one act() call on the official machine
+    config.reset_budget_s     60, compute budget of reset() on the official machine
 
 act(observation: Observation) is called every control_dt_s with noise-free state:
     observation.time_s            simulation time [s]
@@ -24,7 +29,8 @@ act(observation: Observation) is called every control_dt_s with noise-free state
     observation.velocity_m_s      (vx, vy, vz) world velocity [m/s]
     observation.quaternion_xyzw   attitude, body -> world
     observation.body_rates_rad_s  (p, q, r) body angular velocity [rad/s]
-    observation.next_gate         index of the next gate to pass (judged by the referee)
+    observation.next_gate         index of the next gate to pass (judged by the referee); wraps to 0 each lap
+    observation.lap               current lap, 0-based (config.laps laps in total)
 
 act() must return Action(thrust_N, body_rates_rad_s):
     thrust_N           collective thrust of all four rotors along body +z [N], in [0, 15]

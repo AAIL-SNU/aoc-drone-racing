@@ -6,19 +6,19 @@ every one of them is evaluated again for every motion-blur substep. Merging the
 body into a single mesh takes it from 1.61 s/frame to 0.216, which is what the
 hand-built airframe costs. This script does that merge once and saves the result.
 
-    python tools/prepare_assets.py                  # uses tools/assets/drone.blend
+    python src/quad_race/render/prepare_assets.py   # uses render/assets/drone.blend
 
 Needs the render env, because it drives Blender:
 
-    env -u DISPLAY conda run -n aoc-render python tools/prepare_assets.py
+    env -u DISPLAY conda run -n aoc-render python src/quad_race/render/prepare_assets.py
 """
 
 import argparse
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from race.vehicle import prepare_drone, prepared_path  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from quad_race.render.vehicle import prepare_drone, prepared_path  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -29,7 +29,7 @@ def main():
     args = parser.parse_args()
     source = Path(args.model)
     if not source.exists():
-        raise SystemExit(f"{source} not found; run python tools/fetch_assets.py first")
+        raise SystemExit(f"{source} not found; run drone-race render --fetch-assets first")
     destination = prepared_path(source)
     meshes, rotors = prepare_drone(source, destination)
     print(f"[prepare] {source.name} -> {destination.name}: "

@@ -208,7 +208,8 @@ class RaceView:
         passed = self.last_item["next_gate"]
         for index, line in enumerate(self.gates):
             line.set_color("#438c55" if index < passed else "#276fa4" if index == passed else "#9ca7b0")
-        self.title.set_text(f"Quadrotor racing | t = {self.last_item['time_s']:.2f} s | gates passed: {passed}")
+        lap = f" | lap {self.last_item['lap'] + 1}" if "lap" in self.last_item else ""
+        self.title.set_text(f"Quadrotor racing | t = {self.last_item['time_s']:.2f} s{lap} | next gate: {passed}")
 
     def save(self, path):
         path = Path(path)

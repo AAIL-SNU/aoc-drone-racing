@@ -13,7 +13,7 @@ import sys
 import bpy
 from mathutils import Matrix, Vector
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from quad_race.rules import frame_boxes  # noqa: E402
 
 ARENA_GRID = (0.05, 0.20, 0.38)    # floor lines: visible, never competing with a gate

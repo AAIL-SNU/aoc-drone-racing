@@ -47,6 +47,9 @@ class PublicConfig:
     body_rate_limit_rad_s: float = 3.0
     body_rate_gain_s_inv: float = 25.0
     vehicle_radius_m: float = 0.28
+    laps: int = 1                  # race length; a lap is one pass through every gate in order
+    act_budget_s: float = 0.02     # compute budget per act() call on the official machine
+    reset_budget_s: float = 60.0   # compute budget for reset() on the official machine
 
 
 @dataclass(frozen=True)
@@ -56,7 +59,8 @@ class Observation:
     velocity_m_s: Vec3
     quaternion_xyzw: tuple[float, float, float, float]  # body -> world
     body_rates_rad_s: Vec3
-    next_gate: int
+    next_gate: int                 # index into config.track.gates, wraps to 0 on every new lap
+    lap: int = 0                   # current lap, 0-based
 
 
 @dataclass(frozen=True)
