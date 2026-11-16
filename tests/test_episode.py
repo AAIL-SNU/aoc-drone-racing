@@ -37,7 +37,7 @@ def test_nominal_baseline_completes_all_four_gates(nominal):
 
 
 def test_controller_replacement_hover_is_a_timeout():
-    log = run_episode(ROOT / "examples/hover.py", CONFIG, Scenario(max_time_s=0.2))
+    log = run_episode(ROOT / "tests/controllers/hover.py", CONFIG, Scenario(max_time_s=0.2))
     assert log["summary"]["status"] == "timeout"
     assert not log["summary"]["completed"]
     assert log["summary"]["gates_passed"] == 0
@@ -46,7 +46,7 @@ def test_controller_replacement_hover_is_a_timeout():
 
 def test_episode_collision_has_failure_status_and_penalty():
     track = replace(CONFIG.track, obstacles=(Box((-0.1, -0.1, 1.4), (0.1, 0.1, 1.6)),))
-    log = run_episode(ROOT / "examples/hover.py", replace(CONFIG, track=track), Scenario(max_time_s=0.2))
+    log = run_episode(ROOT / "tests/controllers/hover.py", replace(CONFIG, track=track), Scenario(max_time_s=0.2))
     assert log["summary"]["status"] == "collision"
     assert not log["summary"]["completed"]
     assert log["summary"]["failure_penalty_s"] == 30.0
