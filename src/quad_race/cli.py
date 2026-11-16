@@ -109,17 +109,11 @@ def main():
     play.add_argument("log")
     play.add_argument("--output", help="Save a PNG or GIF instead of opening a window")
     play.add_argument("--speed", type=float, default=1.0, help="Playback speed (1 = real time)")
-    render = sub.add_parser("render", help="Render a log to MP4 with Blender (needs the aoc-render env)")
-    render.add_argument("log", nargs="?", help="Run log, e.g. outputs/submission_practice.json")
-    render.add_argument("--fetch-assets", action="store_true", help="Download the optional drone/HDRI assets")
-    render.add_argument("--env", dest="conda_env", default="aoc-render", help="Conda env with bpy")
     make = sub.add_parser("make-track", help="Generate a seeded random gate course")
     make.add_argument("output")
     make.add_argument("--gates", type=int, default=10)
     make.add_argument("--seed", type=int, default=0)
-    args, extra = parser.parse_known_args()
-    if extra and args.command != "render":
-        parser.error(f"unrecognized arguments: {' '.join(extra)}")
+    args = parser.parse_args()
 
     if args.command == "make-track":
         save_track(random_track(args.gates, args.seed), args.output)
@@ -141,18 +135,6 @@ def main():
         if args.output:
             print(f"  saved          {Path(args.output).resolve()}")
         return
-    if args.command == "render":
-        import os
-        import subprocess
-        render_dir = Path(__file__).with_name("render")
-        if args.fetch_assets:
-            sys.exit(subprocess.call([sys.executable, str(render_dir / "fetch_assets.py"), *extra]))
-        if not args.log:
-            parser.error("render needs a log file (or --fetch-assets)")
-        env = {key: value for key, value in os.environ.items() if key != "DISPLAY"}   # EGL, not software GL
-        command = ["conda", "run", "--no-capture-output", "-n", args.conda_env, "python",
-                   str(render_dir / "blender.py"), args.log, *extra]
-        sys.exit(subprocess.call(command, env=env))
     if args.command == "check":
         from .evaluate import check as run_check
         sys.exit(0 if run_check(args.controller, args.race if Path(args.race).exists() else None) else 1)
