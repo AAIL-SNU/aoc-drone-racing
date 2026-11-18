@@ -1,7 +1,7 @@
 """Compare the baseline, MPC and MPPI example controllers on one race.
 
     python examples/benchmark.py                                  # practice race, 1 lap
-    python examples/benchmark.py --laps 10 --controllers mpc mppi # the full practice race
+    python examples/benchmark.py --laps 5 --controllers mpc mppi  # the full race
     python examples/benchmark.py --track config/tracks/circuit.json      # any track, no disturbance
     python examples/benchmark.py --seeds 1 2 3 4 5 --turbulence 1.0 --jobs 8 --controllers mpc mppi
     python examples/benchmark.py --log-dir outputs/benchmark      # also save logs for replay

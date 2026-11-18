@@ -20,7 +20,7 @@ reset(config: PublicConfig) is called once before flight with:
     config.body_rate_limit_rad_s   3, per axis
     config.body_rate_gain_s_inv    25, built-in rate loop: w_dot = 25 * (w_cmd - w)
     config.vehicle_radius_m   0.28, collision sphere
-    config.laps               number of laps (10 in the competition); gate 0 follows the last gate
+    config.laps               number of laps (5 in the competition); gate 0 follows the last gate
     config.act_budget_s       0.02, compute budget of one act() call on the official machine
     config.reset_budget_s     60, compute budget of reset() on the official machine
     config.battery_*          battery model parameters (drone_race.battery has the exact equations)

@@ -106,8 +106,8 @@ drone-race run --controller examples/mpc_controller.py --laps 2   # any controll
 drone-race run --track config/tracks/circuit.json                # any track: 1 lap, no disturbance
 drone-race run --race path/to/race.json                          # any race file
 
-drone-race replay outputs/submission_practice.json                # watch a saved run again
-drone-race replay outputs/submission_practice.json --output outputs/replay.gif
+drone-race replay outputs/submission_competition.json                # watch a saved run again
+drone-race replay outputs/submission_competition.json --output outputs/replay.gif
 drone-race make-track outputs/random.json --gates 10 --seed 3     # a seeded random track for testing
 ```
 
@@ -119,7 +119,7 @@ The default race is `config/races/competition.json`. A race file bundles a track
 
 ```json
 {
-  "name": "practice",
+  "name": "competition",
   "track": "../tracks/circuit.json",
   "laps": 5,
   "scenario": {
