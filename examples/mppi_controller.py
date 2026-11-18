@@ -1,7 +1,7 @@
 """Example MPPI racer (Model Predictive Path Integral control).
 
 Every act() call samples SAMPLES perturbed input sequences around the current
-plan, rolls them all out in parallel through quad_race.planning.QuadModel, scores
+plan, rolls them all out in parallel through drone_race.planning.QuadModel, scores
 each rollout and updates the plan with the softmin-weighted average of the noise:
 
     U <- U + sum_i w_i eps_i,   w_i ∝ exp(-(S_i - min S) / lambda)
@@ -15,8 +15,9 @@ Copy this file to submission/controller.py to submit it.
 
 import numpy as np
 
-from quad_race import Action
-from quad_race.planning import DisturbanceObserver, QuadModel, RacingLine, quat_to_matrix, state_from_observation
+from drone_race import Action
+from drone_race.battery import terminal_voltage, thrust_limit
+from drone_race.planning import DisturbanceObserver, QuadModel, RacingLine, quat_to_matrix, state_from_observation
 
 SAMPLES = 512           # sized to fit the 20 ms act() budget with margin
 HORIZON = 25           # steps
@@ -25,12 +26,15 @@ TEMPERATURE = 0.05     # lambda, relative to the median cost spread (see act)
 NOISE_STD = np.array([1.5, 1.0, 1.0, 0.6])   # thrust [N], body rates [rad/s]
 NOISE_SMOOTHING = 0.6  # first-order filter on the noise along the horizon
 THRUST_MIN = 1.5       # N, near-zero thrust leaves the rotors no authority to turn the body
-THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances
-# Racing-line aggressiveness (quad_race.planning.RacingLine); the main lap-time knob.
+THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances; the battery limit is applied on top
+# Racing-line aggressiveness (drone_race.planning.RacingLine); the main lap-time knob.
 # a_lateral above ~26 m/s^2 exceeds what THRUST_MAX can deliver, so the reference
 # runs ahead and MPPI cuts corners as far as the gate penalty allows. Finished all
 # shipped, six random and disturbed test runs with this setting.
 LINE = dict(v_max=16.0, a_lateral=40.0, a_accel=18.0, a_brake=20.0)
+# Battery pacing: LINE is the full-battery line. As the pack drains, act() switches to a slower
+# speed profile on the same path, scaled by the lateral acceleration the battery can still sustain.
+PACE_LEVELS = np.linspace(0.4, 1.0, 13)   # a_lateral/a_accel/a_brake scales relative to LINE
 SEED = 0               # private generator: never touches the global NumPy RNG
 
 # Quadratic weights.
@@ -49,9 +53,17 @@ class Controller:
         self.model = QuadModel(config, MODEL_DT)
         self.model.u_low[0] = max(self.model.u_low[0], THRUST_MIN)
         self.model.u_high[0] = min(self.model.u_high[0], THRUST_MAX)
-        self.line = RacingLine(config.track, laps=config.laps, **LINE)
+        # Same path, different speed profiles: arc length s is shared, so switching is seamless.
+        self.lines = [RacingLine(config.track, laps=config.laps, v_max=LINE["v_max"],
+                                 **{k: scale * LINE[k] for k in ("a_lateral", "a_accel", "a_brake")})
+                      for scale in PACE_LEVELS]
+        self.line = self.lines[-1]
+        self.a_full = self.sustained_lateral(1.0)
         self.observer = DisturbanceObserver(config)
         self.U = np.tile([self.model.hover_thrust, 0.0, 0.0, 0.0], (HORIZON, 1))
+        # Actuation delay: an action is flown one control step after it is returned.
+        self.delay_model = QuadModel(config, config.control_dt_s)
+        self.flying = np.array([self.model.hover_thrust, 0.0, 0.0, 0.0])   # command flown until the next step
         self.s = 0.0
         gates = config.track.gates
         self.gate_center = np.array([g.center for g in gates])
@@ -84,9 +96,21 @@ class Controller:
         outside = (np.abs(hit[..., 1]) > self.gate_half[gate, 0]) | (np.abs(hit[..., 2]) > self.gate_half[gate, 1])
         return crosses & outside
 
+    def sustained_lateral(self, soc):
+        """Lateral acceleration the pack sustains at full draw at this soc (ignores the momentary sag)."""
+        thrust = min(THRUST_MAX, float(thrust_limit(terminal_voltage(soc, THRUST_MAX, self.config), self.config)))
+        return np.sqrt(max((thrust / self.model.mass) ** 2 - self.config.gravity_m_s2 ** 2, 0.0))
+
     def act(self, observation):
-        x0 = state_from_observation(observation)
-        d = self.observer.update(x0)
+        # The battery (drone_race.battery) lowers the thrust ceiling as it drains and sags.
+        self.model.u_high[0] = min(THRUST_MAX, observation.thrust_limit_N)
+        scale = self.sustained_lateral(observation.battery_soc) / self.a_full
+        self.line = self.lines[max(int(np.searchsorted(PACE_LEVELS, scale, side="right")) - 1, 0)]
+        x_now = state_from_observation(observation)
+        d = self.observer.update(x_now)
+        # The action returned now is flown from the next control step; until then the drone
+        # flies the previous one (u_0 is fixed). Plan from where that leaves it.
+        x0 = self.delay_model.step(x_now, self.flying, d)
         p_ref, v_ref, z_ref, thrust_ref = self.references(observation, x0, d)
 
         # Time-correlated exploration noise around the current plan.
@@ -130,5 +154,6 @@ class Controller:
         u0 = plan[0].copy()
         t = np.arange(HORIZON) * MODEL_DT + self.config.control_dt_s
         self.U = np.column_stack([np.interp(t, np.arange(HORIZON) * MODEL_DT, plan[:, j]) for j in range(4)])
-        self.observer.remember(x0, u0)
+        self.observer.remember(x_now, self.flying)
+        self.flying = u0
         return Action(float(u0[0]), tuple(float(w) for w in u0[1:]))

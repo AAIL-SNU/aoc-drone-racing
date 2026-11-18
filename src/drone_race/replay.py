@@ -129,9 +129,31 @@ class AttitudePanel:
                               f"yaw {(yaw + 180) % 360 - 180:+6.1f}°  tilt {tilt:5.1f}°")
 
 
+def draw_wind_zone(axes, lo, hi, wind, name):
+    """Translucent box plus an arrow of the zone's wind (1 m of arrow per 1 m/s)."""
+    if np.any(hi <= lo):
+        return
+    axes.bar3d(*lo, *(hi - lo), color="#5aa9d6", alpha=0.07, shade=False)
+    center = (lo + hi) / 2
+    speed = float(np.linalg.norm(wind))
+    if speed > 0:
+        axes.quiver(*(center - wind / 2), *wind, length=1.0, color="#2b7bb9", linewidth=2.2,
+                    arrow_length_ratio=0.3)
+    axes.text(*(center + [0, 0, 0.4 + max(0.0, -wind[2] / 2)]), f"{name}\n{speed:.1f} m/s",
+              fontsize=7, color="#2b7bb9", ha="center")
+
+
+def wind_zones_from_log(log) -> list:
+    zones = log.get("scenario", {}).get("wind_zones", [])
+    winds = log.get("realization", {}).get("zone_wind_m_s", {})
+    return [(np.array(z["lower"]), np.array(z["upper"]), winds[z["name"]], z["name"])
+            for z in zones if z["name"] in winds]
+
+
 class RaceView:
-    def __init__(self, track, *, live=False, attitude=None):
-        """attitude: optional (times_s, euler_deg) arrays; adds a pose panel."""
+    def __init__(self, track, *, live=False, attitude=None, wind_zones=()):
+        """attitude: optional (times_s, euler_deg) arrays; adds a pose panel.
+        wind_zones: optional (lower, upper, wind_m_s, name) tuples, drawn as boxes with the zone's wind."""
         import matplotlib.pyplot as plt
         self.plt, self.live = plt, live
         self.attitude = None
@@ -174,6 +196,8 @@ class RaceView:
         ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]), zlim=(lo[2], hi[2]),
                xlabel="x [m]", ylabel="y [m]", zlabel="z [m]")
         ax.set_box_aspect(np.maximum(hi - lo, 0.1))
+        for zone_lo, zone_hi, wind, name in wind_zones:
+            draw_wind_zone(ax, np.clip(zone_lo, lo, hi), np.clip(zone_hi, lo, hi), np.asarray(wind), name)
         ax.view_init(elev=27, azim=-65)
         ax.set_title("Course overview", fontsize=11, pad=5)
         ax.legend(loc="upper left", fontsize=9)
@@ -230,7 +254,7 @@ def replay(log_path, *, output=None, show=False, speed=2.0):
     samples = log["samples"]
     attitude = (np.array([item["time_s"] for item in samples]),
                 euler_deg([item["quaternion_xyzw"] for item in samples]))
-    view = RaceView(track_from_dict(log["config"]["track"]), attitude=attitude)
+    view = RaceView(track_from_dict(log["config"]["track"]), attitude=attitude, wind_zones=wind_zones_from_log(log))
     try:
         if output and Path(output).suffix.lower() != ".gif":
             for item in samples:

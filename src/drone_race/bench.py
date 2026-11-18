@@ -73,7 +73,7 @@ def measure_workloads(config, seconds: float, progress=print) -> dict[str, float
 
 
 def bench(submission="submission", race_path=None, *, seconds=10.0, write_reference=False, progress=print):
-    race_path = race_path or submissions.find_repo_file("config/races/practice.json")
+    race_path = race_path or submissions.find_repo_file("config/races/competition.json")
     _, config, _ = load_race(race_path, laps=1)
     reference_seconds = 4.0
     progress(f"this machine: {machine()['processor']}, {machine()['platform']}")

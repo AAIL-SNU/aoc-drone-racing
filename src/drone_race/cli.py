@@ -7,17 +7,17 @@ from .env import Scenario, run_episode, save_log
 from .track import load_track, random_track, save_track
 
 
-PRACTICE = "config/races/practice.json"
+DEFAULT_RACE = "config/races/competition.json"
 
 
 def _race_args(parser):
-    parser.add_argument("--race", default=PRACTICE,
-                        help=f"Race file: track + laps + disturbance (default {PRACTICE})")
+    parser.add_argument("--race", default=DEFAULT_RACE,
+                        help=f"Race file: track + laps + disturbance (default {DEFAULT_RACE})")
     parser.add_argument("--track", default=None, help="Track file, instead of a race file")
     parser.add_argument("--laps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--wind", type=float, default=None, help="Maximum smooth wind speed [0,2] m/s")
-    parser.add_argument("--mass-error", type=float, default=None, help="Uniform relative mass-error bound [0,0.2]")
+    parser.add_argument("--turbulence", type=float, default=None, help="Horizontal turbulence std [0,2] m/s")
+    parser.add_argument("--calm", action="store_true", help="No wind zones and no turbulence")
     parser.add_argument("--max-time", type=float, default=None, help="Simulated time limit [s]")
 
 
@@ -30,11 +30,13 @@ def _race(args):
         from .race import load_race
         from .submission import find_repo_file
         race = Path(args.race)
-        if not race.exists() and args.race == PRACTICE and find_repo_file(PRACTICE):
-            race = find_repo_file(PRACTICE)
+        if not race.exists() and args.race == DEFAULT_RACE and find_repo_file(DEFAULT_RACE):
+            race = find_repo_file(DEFAULT_RACE)
         name, config, scenario = load_race(race, laps=args.laps, seed=args.seed)
-    overrides = {key: value for key, value in (("wind_max_m_s", args.wind), ("mass_error_fraction", args.mass_error),
-                                                ("max_time_s", args.max_time)) if value is not None}
+    overrides = {key: value for key, value in (("turbulence_m_s", args.turbulence), ("max_time_s", args.max_time))
+                 if value is not None}
+    if args.calm:
+        overrides.update(turbulence_m_s=0.0, wind_zones=())
     return name, config, replace(scenario, **overrides)
 
 
@@ -65,6 +67,8 @@ def _print_summary(s, log_path):
           f"   late {s['deadline_misses']} (budget {1e3 * s['act_budget_s']:.1f} ms"
           + ("" if s["timing_enforced"] else ", not enforced in --debug") + ")")
     print(f"  peak tilt      {s['peak_tilt_deg']:.0f} deg   peak load {s['peak_load_g']:.2f} g")
+    print(f"  battery        {s['battery_final_soc']:.0%} left   min {s['battery_min_voltage_V']:.2f} V"
+          f"   {s['battery_energy_Wh']:.2f} Wh   thrust-limited steps {s['thrust_saturated_steps']}")
     print(f"  log            {Path(log_path).resolve()}")
 
 
@@ -87,11 +91,11 @@ def main():
     check = sub.add_parser("check", help="Check a submission before handing it in")
     check.add_argument("controller", nargs="?", default="submission",
                        help="Folder with controller.py (default submission/) or a .py file")
-    check.add_argument("--race", default="config/races/practice.json")
+    check.add_argument("--race", default=DEFAULT_RACE)
 
     bench = sub.add_parser("bench", help="Estimate act() timing on the official machine")
     bench.add_argument("--controller", default="submission")
-    bench.add_argument("--race", default="config/races/practice.json")
+    bench.add_argument("--race", default=DEFAULT_RACE)
     bench.add_argument("--seconds", type=float, default=10.0, help="Simulated seconds of your controller to time")
     bench.add_argument("--write-reference", action="store_true", help="TAs: store this machine as the official one")
 
@@ -160,7 +164,7 @@ def main():
     submission_name = submission_name.stem if submission_name.suffix == ".py" else submission_name.name
     log_path = Path(args.log or f"outputs/{submission_name}_{name}.json")
     print(f"{submission_name} on {config.track.name}: {config.laps} lap(s), seed {scenario.seed}, "
-          f"wind <= {scenario.wind_max_m_s} m/s, mass error <= ±{scenario.mass_error_fraction:.0%}")
+          f"{len(scenario.wind_zones)} wind zone(s), turbulence {scenario.turbulence_m_s} m/s")
     budget_scale = args.budget_scale
     if args.debug:
         print("timing: not enforced (--debug)")

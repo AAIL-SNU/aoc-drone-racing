@@ -1,7 +1,9 @@
 """Race files: one JSON that fixes the track, the number of laps and the disturbance.
 
     {"name": "practice", "track": "../tracks/circuit.json", "laps": 10,
-     "scenario": {"seed": 0, "wind_max_m_s": 0.5, "mass_error_fraction": 0.05}}
+     "scenario": {"seed": 0, "turbulence_m_s": 0.6, "wind_zones": [{"name": ..., "lower": ..., ...}]}}
+
+Wind zones and turbulence are described in drone_race.wind.
 
 ``track`` is relative to the race file. The official race file (with the seed chosen
 by the instructor) is kept private until the results are published.

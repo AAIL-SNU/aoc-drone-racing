@@ -1,76 +1,149 @@
-# AOC 드론 레이싱 대회 (Fall 2026)
+# Competition Rule
 
-> 초안입니다. 세부 규칙은 대회 전까지 바뀔 수 있으며, 바뀌면 이 문서와 `config/races/`를 함께 갱신합니다.
+> **Draft.** Rules may change before the competition. When they do, this document and `config/races/` are updated together. Items marked **TBD** are not final yet.
 
-## 1. 개요
+This document is the rulebook: the race, the vehicle, the disturbances, the constraints, the compute limits and the scoring. How to install, run and test the code is in [README.md](README.md).
 
-- 외란이 가해지는 정해진 서킷을 최대한 빠르게 완주하는 드론 controller를 구현해서 경쟁하는 대회입니다.
-- AOC 수업에서 배운 optimal control 방법론을 직접 구현하면서 복습하고 체득하는 것이 목표입니다.
+## 1. Overview
 
-## 2. 대회 진행
+- Each participant writes a controller that flies a quadrotor around a fixed circuit **as fast as possible**, while wind pushes the drone around.
+- The aim is to implement and practice the optimal control methods covered in Applied Optimal Control (M2795.007200).
 
-1. 대회 2주 전에 이 GitHub repository를 공개합니다. 각자 clone해서 자신의 controller를 구현합니다.
-2. 대회 이틀 전 밤까지 GitHub(또는 eTL)로 `submission/` 폴더를 제출합니다.
-3. TA가 제출된 코드를 연구실 Linux 서버에서 **모두 같은 외란이 걸린 서킷**으로 실행해 시간과 점수를 채점합니다.
-4. 각 참가자의 주행 trajectory로 영상을 rendering해 둡니다.
-5. 대회 당일에는 참가 순서를 무작위로 뽑고, 그 순서대로 dashboard 웹페이지에서 영상을 재생하면서 순위판을 실시간으로 갱신합니다. Dashboard에는 주행 영상과 함께 주행 경로, lap time, fastest lap 등을 보여줍니다.
-6. 최종 순위는 점수로 정합니다.
-7. (선택, 시간이 되면) 성적과 무관하게 우승자에게 3D 프린팅한 작은 트로피를 드립니다.
+## 2. Schedule and procedure
 
-## 3. 시뮬레이션 규칙
+1. The repository is released two weeks before the competition. Each participant clones it and implements a controller.
+2. Submissions (the `submission/` folder) are due through GitHub (or eTL) on the night two days before the competition.
+3. The TAs run every submission on the official Linux server, all on **the same circuit with the same disturbance**, and record times and scores.
+4. A video is rendered from each participant's flight trajectory.
+5. On competition day the running order is drawn at random. The videos are played in that order on the dashboard web page, and the leaderboard is updated live. The dashboard shows the flight video together with the flight path, lap times and fastest lap.
+6. The final ranking is decided by the score (Section 8).
+7. (Optional, time permitting) The winner receives a small 3D-printed trophy. It has no effect on grades.
 
-| 항목 | 규칙 | 구현 상태 |
-|---|---|---|
-| 서킷 | `config/tracks/circuit.json`: 게이트 10개로 이루어진 닫힌 8자 서킷 (중앙에서 높은 길과 낮은 길이 교차) | ✅ |
-| 랩 수 | 10 laps. 한 랩은 게이트 0→9를 순서대로 통과하는 것이고, 게이트 9가 start/finish line입니다. 1랩은 출발 지점(게이트 9 바로 뒤)에서 정지 상태로 시작합니다. | ✅ |
-| Observation | 노이즈 없는 상태값(위치, 속도, 자세, 각속도)과 다음 게이트 번호, 현재 랩 | ✅ |
-| Dynamics | 제공되는 모델(RotorPy Hummingbird + rotor drag)을 정확하다고 가정합니다. `quad_race.planning.QuadModel`은 같은 모델을 controller에서 쓸 수 있게 만든 것입니다. | ✅ |
-| 외란 | 랩의 일부 구간에 random seed로 정해지는 바람이 붑니다. 대회 seed는 교수님이 정하며 대회 전까지 공개하지 않습니다. | ⏳ 지금은 시간에 따라 부드럽게 변하는 전역 바람과 질량 오차뿐입니다. 구간별 바람은 구현 예정입니다. |
-| Constraint: 최대 추력 | 0–15 N, body rate ±3 rad/s. 범위를 벗어난 action은 `invalid_action`으로 처리되고 주행이 끝납니다. | ✅ |
-| Constraint: 최대 tilt | 실제 드론은 카메라로 앞을 봐야 하므로 기울어질 수 있는 각도에 한계가 있습니다. | ⏳ 값과 위반 시 처리 방식 미정. 지금은 로그에 `peak_tilt_deg`만 기록합니다. |
-| Constraint: 배터리 | 공격적인 기동일수록 배터리를 빨리 소모하고, 배터리가 줄면 최대 추력이 떨어집니다. | ⏳ 구현 예정 |
-| Control frequency | 50 Hz 고정 (`config.control_dt_s = 0.02`). TA가 테스트해 보고 조정할 수 있습니다. | ✅ |
+## 3. The race
 
-## 4. 계산 자원과 공정성
+| Item | Rule |
+|---|---|
+| Circuit | `config/tracks/circuit.json` (`aoc-circuit-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. |
+| Arena | The vehicle must stay inside the box x ∈ [−20, 20] m, y ∈ [−10, 10] m, z ∈ [0, 6] m (`track.bounds`). The ground is the bottom face of this box. |
+| Laps | **5 laps.** One lap passes gates 0 → 9 in order; gate 9 is the start/finish line. |
+| Start | At rest, hovering at `track.start` = (−1.6, −1.6, 1.5) m, just past gate 9, at simulated time t = 0. |
+| Time limit | Set by the official race file. If the file sets none, 45 s per lap (225 s for 5 laps). |
+| Gates | Each gate has a 2 m × 2 m square opening framed by 0.1 m bars. It is passed along its local +x axis, (cos yaw, sin yaw, 0). |
 
-- 채점은 모두 **같은 연구실 Linux 서버**에서 한 팀씩 차례로 진행합니다. 병렬로 돌리지 않으므로 타이밍을 공정하게 비교할 수 있습니다.
-- controller는 시뮬레이터와 **분리된 프로세스**에서 실행되고, 시뮬레이터와는 observation과 action만 주고받습니다. 채점 서버에서는 추가로 Docker 컨테이너 안에서 실행되며 네트워크 없음, 읽기 전용 파일시스템, CPU 코어 1개, 메모리 4 GB 제한이 걸립니다.
-- **스레드 1개, GPU 사용 금지.** 수치 라이브러리(BLAS, OpenMP, numba, JAX 등)의 스레드 수는 1로 고정되고, 프로세스는 코어 1개에 고정됩니다. 신경망은 CPU에서 추론하면 됩니다. 학습은 각자 노트북에서 오프라인으로 하고, 가중치를 `assets/`에 넣어 제출하세요.
-- **Python 패키지 제한:** 공식 환경은 `requirements.txt`에 고정된 버전입니다 (Python 3.12.12). 여기에 없는 패키지가 필요하면 대회 1주 전까지 TA에게 요청하세요. 요청 기간이 끝나면 목록을 동결합니다.
-- **50 Hz 계산 예산:**
-  - `act()`는 공식 서버 기준 20 ms 안에 끝나야 합니다. 시간은 controller 프로세스의 CPU time으로 잽니다. 그래서 OS가 잠깐 멈춰도 늦은 것으로 치지 않고, 스레드를 늘려도 이득이 없습니다.
-  - 20 ms를 넘긴 호출의 결과는 버려지고, 그 스텝에는 직전 action이 그대로 유지됩니다. 이 횟수는 `deadline_misses`로 기록됩니다.
-  - `act()`가 0.5 s 넘게 응답하지 않으면 멈춘 것으로 보고 주행을 종료합니다 (`controller_timeout`).
-  - `reset()`은 60 s까지 쓸 수 있습니다. 오프라인 궤적 최적화나 JIT 컴파일은 여기서 하세요.
-- **노트북과 서버의 성능 차이:**
-  - `drone-race bench`를 한 번 실행하면 예제 MPC/MPPI로 내 노트북과 공식 서버의 속도 비를 재서 `outputs/calibration.json`에 저장합니다.
-  - 그 뒤로 `drone-race run`은 20 ms 예산을 이 비율로 환산해 노트북에서 적용합니다. 예를 들어 서버보다 빠른 노트북이면 14 ms로 줄어듭니다. 그래서 서버에서 늦을 controller는 노트북에서도 늦습니다.
-  - `bench`는 내 controller의 `act()` 시간이 서버에서 얼마나 걸릴지도 추정해 줍니다.
-  - 추정치일 뿐이므로 p99 기준으로 30% 이상 여유를 두는 것을 권장합니다.
-  - 대회 전에 공식 서버에서 practice run을 돌려 실제 타이밍 리포트를 드릴 예정입니다.
+Coordinates are SI, world frame right-handed with z up, gravity (0, 0, −9.81) m/s².
 
-## 5. 제출 형식
+## 4. Vehicle and dynamics
+
+The plant is [RotorPy](https://github.com/spencerfolk/rotorpy)'s AscTec Hummingbird model with aerodynamics enabled. It is the same for everyone and is assumed exact: there is no model mismatch apart from the wind.
+
+| Property | Value |
+|---|---|
+| Mass | 0.5 kg |
+| Inertia | diag(3.65, 3.68, 7.03) × 10⁻³ kg·m² |
+| Arm length / rotor radius | 0.17 m / 0.10 m |
+| Aerodynamics | rotor drag, parasitic (frame) drag and translational lift, all driven by the airspeed v − wind |
+| Motors | first-order lag, time constant 5 ms; rotor speed ≤ 1500 rad/s |
+| Collision shape | sphere of radius 0.28 m around the center of mass |
+| Physics step | 2 ms |
+
+**Action.** Every control step the controller returns a collective thrust T [N] along body +z and a body-rate command ω_cmd = (p, q, r) [rad/s]. A built-in rate loop tracks the command, ω̇ ≈ 25 (ω_cmd − ω), followed by motor allocation, rotor saturation and motor lag.
+
+**Observation.** Noise-free: time, position, velocity, attitude quaternion (x, y, z, w; body → world), body rates, the next gate to pass, the current lap, the number of gates passed and missed so far, and the battery state (state of charge, terminal voltage, current thrust limit). The wind is **not** observed.
+
+**Control rate and delay.**
+- The controller runs at **50 Hz** (`control_dt_s = 0.02`). The TAs may adjust this after testing.
+- Each action is held (zero-order hold) until the next one takes effect: one control step normally, longer after a late `act()` call (Section 7).
+- There is a **one-step actuation delay**: the action computed from the observation at time t_k is applied from t_k + 20 ms to t_k + 40 ms. Until the first action takes effect, the drone flies hover thrust (4.905 N) with zero body rates.
+
+`drone_race.planning.QuadModel` reproduces this model for use inside a controller.
+
+## 5. Disturbances
+
+The wind is an air velocity in the world frame. It acts on the drone only through the aerodynamic terms above, which use the airspeed v − wind. It has two parts:
+
+**Wind zones (layout public, strength random).** Boxes on the course, each with a nominal wind direction. For one race the seed draws each zone's speed uniformly from its `speed_m_s` range, and turns its direction about the vertical axis by a uniform angle within ±`heading_jitter_deg`. The zone wind is then constant in time, identical on every lap, and fades smoothly to zero within `ramp_m` outside the box. The practice race (`config/races/competition.json`) has three zones:
+
+| Zone | Box (lower → upper) [m] | Direction | Speed [m/s] | Heading jitter |
+|---|---|---|---|---|
+| east crosswind | (12, −3, 0) → (20, 5, 6) | +x | 1.5–3.0 | ±30° |
+| center downwash | (−2, −2, 0) → (2, 2, 6) | −z | 1.0–2.0 | 0° |
+| west tailwind | (−20, −8, 0) → (−12, 3, 6) | −y | 1.5–3.0 | ±30° |
+
+**Turbulence (unpredictable).** A first-order Dryden (Gauss–Markov) process on each world axis, driven by fresh Gaussian noise every physics step. Its standard deviation is `turbulence_m_s` horizontally (0.6 m/s in the practice race) and half that vertically. Its correlation time is the length scale divided by the airspeed (20 m horizontally, 3 m vertically; airspeed floored at 1 m/s).
+
+**Seed.** All random draws come from the race seed alone, so every submission meets exactly the same zone winds and the same turbulence sequence. The official seed is chosen by the instructor and kept private until the results are published.
+
+## 6. Constraints
+
+| Constraint | Rule |
+|---|---|
+| Thrust | Clipped to [0, `observation.thrust_limit_N`] **without penalty**. 15 N is the limit at full charge; the battery lowers it (below). The clipping uses the limit reported in the observation the action was computed from. |
+| Body rates | Each of p, q, r must be within ±3 rad/s. A command outside this range, a NaN, or a malformed action ends the run as `invalid_action`. |
+| Battery | 3S LiPo model (`drone_race.battery`, equations below). Reaching zero charge ends the run as `battery_depleted`. The 500 mAh pack is sized so that an aggressive controller still finishes 5 laps with most of its charge left; the battery costs time through the lower thrust limit, not by running out. |
+| Maximum tilt | **TBD.** A real racing drone needs its camera to see ahead, so tilt will be limited. The limit and how violations are handled are not decided; for now only `peak_tilt_deg` is logged. |
+| Arena | The collision sphere must stay inside the arena box (`out_of_bounds` otherwise). |
+| Gate frames | The swept collision sphere must not touch a gate bar (`collision` otherwise). |
+
+**Battery model.** With T the applied (clipped) thrust and SoC ∈ [0, 1]:
+
+```
+power              P     = 3.75 W/N^1.5 · T^1.5                      (≈ 41 W at hover)
+open-circuit volt  V_oc  = 9.9 V + (12.6 V − 9.9 V) · SoC
+terminal voltage   V     = V_oc − R·I,  with P = V·I,  R = 0.05 Ω
+discharge          dSoC/dt = −I / (500 mAh)
+thrust limit       T_max = 15 N · (V / 12.6 V)²
+```
+
+Flying hard drains the pack faster, and both a drained pack (lower V_oc) and a large current draw (voltage sag R·I) lower the thrust limit. The observation's `battery_voltage_V` is the terminal voltage under the thrust applied during the previous control step, and `thrust_limit_N` is computed from it. The simulator uses exactly the functions in `drone_race.battery`, which controllers may call.
+
+## 7. Compute resources and fairness
+
+- **One machine, one team at a time.** All submissions are scored on the same Linux server, sequentially, never in parallel, so timing is comparable.
+- **Isolation.** The controller runs in a separate process and exchanges only observations and actions with the simulator. On the scoring server it also runs in a Docker container with no network, a read-only file system (only `/tmp` is writable), one CPU core and 4 GB of memory.
+- **One thread, no GPU.** BLAS, OpenMP, numba, JAX and similar libraries are fixed to one thread, and the process is pinned to one core. Run neural networks on the CPU. Train offline on your own machine and submit the weights in `assets/`.
+- **Python packages.** The official environment is Python 3.12.12 with the versions pinned in `requirements.txt`. If you need a package that is not listed, ask the TAs at least one week before the competition. The list is frozen after that.
+- **50 Hz compute budget.**
+  - `act()` must return within **20 ms on the official server**. Time is measured as the CPU time of the whole controller process, so OS preemption never makes a call late, and extra threads only use up the budget faster.
+  - A late call's result is **dropped**. Simulated time keeps running while the controller computes: the previous action stays applied for as many 20 ms periods as the call took (rounded up), and the next observation comes after that. Each late call counts as one `deadline_misses`.
+  - An `act()` call that takes longer than 0.5 s is treated as hung and ends the run (`controller_timeout`).
+  - `reset()` may take up to **60 s**. Use it for offline trajectory optimization or JIT compilation.
+  - Importing the submission may take up to 120 s.
+- **Laptop vs. server.** `drone-race bench` estimates the speed ratio between your computer and the official server and makes `drone-race run` enforce an equivalent budget locally (see README). It is an estimate: keep at least 30 % margin at the p99 `act()` time. Before the competition, the TAs will run practice submissions on the official server and share the measured timing.
+
+## 8. Submission rules
 
 ```
 submission/
-  controller.py        # Controller.reset(config) / act(observation)  (인터페이스는 파일 맨 위 설명 참고)
-  my_model.py          # 필요하면 추가 모듈 (controller.py에서 import)
-  assets/              # 가중치, 사전계산 궤적 등 (폴더 전체 50 MB 이하)
+  controller.py        # defines Controller with reset(config) and act(observation)
+  my_model.py          # optional extra modules, imported from controller.py
+  assets/              # optional data: weights, precomputed trajectories, ...
 ```
 
-- 채점에는 `submission/` 폴더만 쓰입니다. 시뮬레이터(`src/quad_race`)를 수정해도 반영되지 않습니다.
-- 실행 중 working directory는 `submission/`입니다. 따라서 `open("assets/weights.npz")`처럼 상대 경로를 쓸 수 있습니다.
-- 제출 전에 `drone-race check`가 통과하는지 확인하세요. GitHub에 push하면 같은 검사가 Linux에서 자동으로 실행됩니다 (`.github/workflows/check.yml`).
+- Only the `submission/` folder is collected. Changes to the simulator (`src/drone_race/`) or any other file are not used for scoring.
+- The whole folder must be **50 MB or less**; a larger submission is disqualified (ranked as not finished).
+- At run time the working directory is `submission/`, so relative paths such as `open("assets/weights.npz")` work.
+- Only the Python standard library, the packages in `requirements.txt` and `drone_race` itself may be imported.
+- `drone-race check` must end with `OK` before you submit.
 
-## 6. 점수
+## 9. Scoring
+
+The **score** is a time in seconds; **lower is better**:
 
 ```
-score = 10랩 완주 시간 + 5 s × (통과하지 못한 게이트 수) + 1 s × (기타 위반 횟수)
+score = T_finish + 5 s × (infractions)
 ```
 
-- **통과하지 못한 게이트:** 다음 게이트의 opening 밖으로 지나가거나(frame 바깥 2 m 이내), 게이트를 건너뛰고 그다음 게이트를 통과하면 그 게이트는 miss로 처리되고 레이스는 계속됩니다.
-- **기타 위반:** 지금은 게이트를 역방향으로 통과하는 경우(`wrong_way`)입니다. tilt, 배터리 규칙이 들어오면 함께 정의합니다.
-- **완주하지 못한 경우:**
-  - 해당 상황: 충돌(게이트 frame, 장애물), 경기장 이탈, 시간 초과, controller 오류나 타임아웃, 잘못된 action.
-  - 순위: 완주한 참가자 전원보다 뒤이고, 그 안에서는 진행한 게이트 수가 많은 순, 같으면 오래 비행한 순입니다.
-- 공식 결과는 채점 서버의 로그입니다. 같은 seed로 다시 돌려도 계산 시간 편차 때문에 deadline miss가 달라져 결과가 미세하게 다를 수 있습니다.
+- **T_finish** is the simulated time at which the drone crosses the finish line (gate 9) at the end of lap 5, interpolated within the physics step.
+- **Gate passed:** the center of the drone crosses the next gate's plane in its +x direction while inside the opening shrunk by the vehicle radius, i.e. within ±(1.0 − 0.28) = ±0.72 m of the gate center in both directions of the gate plane.
+- **Gate missed (+5 s, the race continues):**
+  - the drone crosses the next gate's plane forward outside the shrunk opening but no more than 2 m beyond its edge, or
+  - the drone skips the next gate and passes a later one (at most half a lap ahead); every skipped gate counts as missed.
+- **Infraction (+1 s):** currently only `wrong_way`, i.e. passing through any gate's opening backwards. It never counts as progress. Tilt and battery rules may add infractions later.
+- **Did not finish (DNF):** the run ends without completing 5 laps when the drone
+  - touches a gate frame (`collision`) or leaves the arena (`out_of_bounds`),
+  - empties the battery (`battery_depleted`),
+  - runs out of time (`timeout`),
+  - raises an exception (`controller_error`), hangs (`controller_timeout`) or returns an invalid action (`invalid_action`),
+  - or the physics becomes non-finite (`simulation_error`).
+- **Ranking.** Finished runs are ranked by score. Every DNF ranks below every finished run; among DNFs, more gates resolved (passed or missed) ranks higher, then a longer flight time. A disqualified submission is ranked as not finished.
+- **Official result.** The log produced on the scoring server is final. Re-running the same seed can give slightly different results, because compute-time jitter can change which `act()` calls are late.

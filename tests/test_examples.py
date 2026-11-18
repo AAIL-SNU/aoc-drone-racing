@@ -3,11 +3,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from quad_race.api import Action, PublicConfig
-from quad_race.env import run_episode
-from quad_race.plant import RotorPyPlant
-from quad_race.planning import QuadModel, RacingLine
-from quad_race.track import demo_track
+from drone_race.api import Action, PublicConfig
+from drone_race.env import run_episode
+from drone_race.plant import RotorPyPlant
+from drone_race.planning import QuadModel, RacingLine
+from drone_race.track import demo_track
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = PublicConfig(demo_track())

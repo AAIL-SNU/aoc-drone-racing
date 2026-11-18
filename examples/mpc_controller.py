@@ -5,7 +5,7 @@ Every act() call solves, warm-started from the previous solution,
     min_Z  sum_k 1/2 |r(x_k, u_k)|^2 + 1/2 |r_N(x_N)|^2
     s.t.   x_{k+1} = f(x_k, u_k),   u_k = sat(z_k) = u_mid + u_half * tanh(z_k)
 
-over a 1 s horizon, where f is quad_race.planning.QuadModel (thrust, body-rate
+over a 1 s horizon, where f is drone_race.planning.QuadModel (thrust, body-rate
 loop and rotor drag) and r penalizes deviation from the racing line reference
 (position, velocity and thrust direction) plus input effort.
 
@@ -19,19 +19,25 @@ Copy this file to submission/controller.py to submit it.
 
 import numpy as np
 
-from quad_race import Action
-from quad_race.planning import DisturbanceObserver, QuadModel, RacingLine, quat_to_matrix, state_from_observation
+from drone_race import Action
+from drone_race.battery import terminal_voltage, thrust_limit
+from drone_race.planning import DisturbanceObserver, QuadModel, RacingLine, quat_to_matrix, state_from_observation
 
 HORIZON = 25           # steps
 MODEL_DT = 0.04        # s, horizon = 1.0 s
 ITERATIONS = 3         # iLQR iterations per control step (warm-started)
 LINE_SEARCH = np.array([1.0, 0.5, 0.25, 0.1])   # step sizes, evaluated together
 THRUST_MIN = 1.5       # N, near-zero thrust leaves the rotors no authority to turn the body
-THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances
-# Racing-line aggressiveness (quad_race.planning.RacingLine); the main lap-time knob.
+THRUST_MAX = 14.0      # N, keeps a little thrust margin for disturbances; the battery limit is applied on top
+# Racing-line aggressiveness (drone_race.planning.RacingLine); the main lap-time knob.
 # Tuned on both shipped tracks, six random tracks and disturbed runs; a_lateral 35+ is faster on clean runs
 # but crashes under wind and mass error.
 LINE = dict(v_max=16.0, a_lateral=30.0, a_accel=12.0, a_brake=14.0)
+# Battery pacing: the line above is the full-battery line. As the pack drains, the thrust it can
+# sustain drops, so act() switches to a slower speed profile on the same path (see pace()).
+# PACE_RATIO maps the sustainable lateral acceleration to the line's a_lateral.
+PACE_LEVELS = np.linspace(0.4, 1.0, 13)   # a_lateral/a_accel/a_brake scales relative to LINE
+PACE_RATIO = 0.8
 
 # Residual weights (square roots of quadratic weights).
 W_POS, W_VEL, W_TILT, W_RATE = 6.0, 1.0, 2.0, 0.3
@@ -50,9 +56,16 @@ class Controller:
         self.model.u_high[0] = min(self.model.u_high[0], THRUST_MAX)
         self.u_mid = 0.5 * (self.model.u_high + self.model.u_low)
         self.u_half = 0.5 * (self.model.u_high - self.model.u_low)
-        self.line = RacingLine(config.track, laps=config.laps, **LINE)
+        # Same path, different speed profiles: arc length s is shared, so switching is seamless.
+        self.lines = [RacingLine(config.track, laps=config.laps, v_max=LINE["v_max"],
+                                 **{k: scale * LINE[k] for k in ("a_lateral", "a_accel", "a_brake")})
+                      for scale in PACE_LEVELS]
+        self.line = self.lines[-1]
         self.observer = DisturbanceObserver(config)
         hover = np.array([self.model.hover_thrust, 0.0, 0.0, 0.0])
+        # Actuation delay: an action is flown one control step after it is returned.
+        self.delay_model = QuadModel(config, config.control_dt_s)
+        self.flying = hover.copy()           # command flown until the next control step
         self.Z = np.tile(np.arctanh((hover - self.u_mid) / self.u_half), (HORIZON, 1))
         self.s = 0.0
         gates = config.track.gates
@@ -73,6 +86,17 @@ class Controller:
 
     def saturate(self, z):
         return self.u_mid + self.u_half * np.tanh(z)
+
+    def set_thrust_ceiling(self, ceiling):
+        """Move the thrust squashing range, keeping the warm-start thrust plan (clipped) unchanged."""
+        ceiling = max(min(THRUST_MAX, ceiling), self.model.u_low[0] + 0.5)
+        if ceiling == self.model.u_high[0]:
+            return
+        thrust = self.saturate(self.Z)[:, 0]
+        self.model.u_high[0] = ceiling
+        self.u_mid = 0.5 * (self.model.u_high + self.model.u_low)
+        self.u_half = 0.5 * (self.model.u_high - self.model.u_low)
+        self.Z[:, 0] = np.arctanh(np.clip((thrust - self.u_mid[0]) / self.u_half[0], -0.999, 0.999))
 
     def dynamics(self, x, z, d):
         return self.model.step(x, self.saturate(z), d)
@@ -174,9 +198,24 @@ class Controller:
         thrust_ref = np.linalg.norm(force, axis=1)
         return p_ref, v_ref, force / thrust_ref[:, None], thrust_ref
 
+    def pace(self, soc):
+        """Fastest speed profile the battery can sustain: thrust limit at full draw, from soc alone
+        (not the instantaneous sag, which would flip lines back and forth)."""
+        sustained = min(THRUST_MAX, float(thrust_limit(terminal_voltage(soc, THRUST_MAX, self.config), self.config)))
+        a_avail = np.sqrt(max((sustained / self.model.mass) ** 2 - self.config.gravity_m_s2 ** 2, 0.0))
+        scale = PACE_RATIO * a_avail / LINE["a_lateral"]
+        index = int(np.searchsorted(PACE_LEVELS, scale, side="right")) - 1
+        return self.lines[max(index, 0)]
+
     def act(self, observation):
-        x0 = state_from_observation(observation)
-        d = self.observer.update(x0)
+        # The battery (drone_race.battery) lowers the thrust ceiling as it drains and sags.
+        self.set_thrust_ceiling(observation.thrust_limit_N)
+        self.line = self.pace(observation.battery_soc)
+        x_now = state_from_observation(observation)
+        d = self.observer.update(x_now)
+        # The action returned now is flown from the next control step; until then the drone
+        # flies the previous one (u_0 is fixed). Plan from where that leaves it.
+        x0 = self.delay_model.step(x_now, self.flying, d)
         refs = self.references(observation, x0, d)
         self.funnel = [observation.next_gate, (observation.next_gate + 1) % len(self.gate_yaw)]
         _, Z = self.solve(x0, refs, d)
@@ -184,5 +223,6 @@ class Controller:
         # Warm start: shift the plan by one control period.
         t = np.arange(HORIZON) * MODEL_DT + self.config.control_dt_s
         self.Z = np.column_stack([np.interp(t, np.arange(HORIZON) * MODEL_DT, Z[:, j]) for j in range(4)])
-        self.observer.remember(x0, u0)
+        self.observer.remember(x_now, self.flying)
+        self.flying = u0
         return Action(float(u0[0]), tuple(float(w) for w in u0[1:]))

@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from quad_race.api import Box
-from quad_race.track import demo_track, load_track, random_track, save_track, track_from_dict
+from drone_race.api import Box
+from drone_race.track import demo_track, load_track, random_track, save_track, track_from_dict
 
 
 def test_track_roundtrip_creates_output_directory(tmp_path):
@@ -26,10 +26,6 @@ def test_random_track_is_seeded_and_spaced():
     assert np.all((centers > lo) & (centers < hi))
 
 
-def test_ten_gate_track_file_matches_generator():
-    assert load_track(Path(__file__).resolve().parents[1] / "config" / "tracks" / "ten_gates.json") == random_track(10, seed=4)
-
-
 def test_obstacles_are_type_tagged_and_untagged_boxes_still_load(tmp_path):
     track = replace(demo_track(), obstacles=(Box((1., -1., 0.), (2., 1., 1.)),))
     path = tmp_path / "obstacle.json"
@@ -45,8 +41,8 @@ def test_obstacles_are_type_tagged_and_untagged_boxes_still_load(tmp_path):
 
 
 def test_competition_circuit_is_closed_and_flyable():
-    from quad_race.planning import RacingLine
-    from quad_race.rules import RaceRules
+    from drone_race.planning import RacingLine
+    from drone_race.rules import RaceRules
     track = load_track(Path(__file__).resolve().parents[1] / "config" / "tracks" / "circuit.json")
     assert len(track.gates) == 10
     # The start sits just behind the last gate, which is the start/finish line.

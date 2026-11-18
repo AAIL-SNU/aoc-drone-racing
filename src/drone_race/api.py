@@ -43,13 +43,19 @@ class PublicConfig:
     nominal_mass_kg: float = 0.5
     gravity_m_s2: float = 9.81
     thrust_min_N: float = 0.0
-    thrust_max_N: float = 15.0
+    thrust_max_N: float = 15.0     # thrust limit at the full-charge voltage; the live limit is lower (drone_race.battery)
     body_rate_limit_rad_s: float = 3.0
     body_rate_gain_s_inv: float = 25.0
     vehicle_radius_m: float = 0.28
     laps: int = 1                  # race length; a lap is one pass through every gate in order
     act_budget_s: float = 0.02     # compute budget per act() call on the official machine
     reset_budget_s: float = 60.0   # compute budget for reset() on the official machine
+    # Battery (drone_race.battery): P = battery_power_coeff * T^1.5, V = V_oc(soc) - R I, T_max ~ V^2.
+    battery_capacity_mAh: float = 500.0        # 5 full-attack laps leave ~70% and cost ~1 s; hovering lasts ~8 min
+    battery_voltage_full_V: float = 12.6       # 3S LiPo, 4.2 V per cell
+    battery_voltage_empty_V: float = 9.9       # 3.3 V per cell at soc = 0
+    battery_resistance_ohm: float = 0.05       # pack internal resistance (voltage sag under load)
+    battery_power_coeff: float = 3.75          # W / N^1.5: ideal rotor power / (figure of merit 0.6 * motor 0.8), ~40 W hover
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,12 @@ class Observation:
     quaternion_xyzw: tuple[float, float, float, float]  # body -> world
     body_rates_rad_s: Vec3
     next_gate: int                 # index into config.track.gates, wraps to 0 on every new lap
-    lap: int = 0                   # current lap, 0-based
+    lap: int                       # current lap, 0-based
+    gates_passed: int              # gates flown through so far (all laps)
+    gates_missed: int              # gates resolved as missed so far (all laps); passed + missed = gates resolved
+    battery_soc: float             # state of charge, 1 = full, 0 = depleted (run ends)
+    battery_voltage_V: float       # terminal voltage under the previous step's applied thrust
+    thrust_limit_N: float          # the thrust is clipped to this observation's thrust_limit_N and flown one control step later
 
 
 @dataclass(frozen=True)

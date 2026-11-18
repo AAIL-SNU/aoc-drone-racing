@@ -1,5 +1,5 @@
 """Alternative submission for testing a valid controller that does not finish."""
-from quad_race import Action
+from drone_race import Action
 
 
 class Controller:

@@ -30,6 +30,11 @@ def observation_to_dict(observation: Observation) -> dict:
         "body_rates_rad_s": [float(x) for x in observation.body_rates_rad_s],
         "next_gate": int(observation.next_gate),
         "lap": int(observation.lap),
+        "gates_passed": int(observation.gates_passed),
+        "gates_missed": int(observation.gates_missed),
+        "battery_soc": float(observation.battery_soc),
+        "battery_voltage_V": float(observation.battery_voltage_V),
+        "thrust_limit_N": float(observation.thrust_limit_N),
     }
 
 
@@ -37,13 +42,15 @@ def observation_from_dict(data: dict) -> Observation:
     return Observation(
         data["time_s"], tuple(data["position_m"]), tuple(data["velocity_m_s"]),
         tuple(data["quaternion_xyzw"]), tuple(data["body_rates_rad_s"]), data["next_gate"], data["lap"],
+        data["gates_passed"], data["gates_missed"],
+        data["battery_soc"], data["battery_voltage_V"], data["thrust_limit_N"],
     )
 
 
 def action_to_wire(action):
     """[thrust, p, q, r] for a well-formed Action; anything else becomes an error string."""
     if not isinstance(action, Action):
-        return None, f"act() must return quad_race.Action, got {type(action).__name__}"
+        return None, f"act() must return drone_race.Action, got {type(action).__name__}"
     try:
         rates = [float(x) for x in action.body_rates_rad_s]
         return [float(action.thrust_N), *rates], None
