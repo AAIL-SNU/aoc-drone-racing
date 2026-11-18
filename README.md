@@ -66,7 +66,7 @@ class Controller:
 The types are defined in `src/drone_race/api.py`:
 
 - **`PublicConfig`**: `track` (`gates`, `obstacles`, `bounds`, `start`), `laps`, `control_dt_s`, `physics_dt_s`, `nominal_mass_kg`, `gravity_m_s2`, `thrust_min_N`/`thrust_max_N`, `body_rate_limit_rad_s`, `body_rate_gain_s_inv`, `vehicle_radius_m`, `act_budget_s`, `reset_budget_s` and the `battery_*` parameters. Each `Gate` has `center`, `yaw_rad`, `width_m`/`height_m` (inner opening) and `frame_m`.
-- **`Observation`**: `time_s`, `position_m`, `velocity_m_s`, `quaternion_xyzw` (body → world), `body_rates_rad_s`, `next_gate`, `lap` (0-based), `gates_passed`, `gates_missed`, `battery_soc`, `battery_voltage_V`, `thrust_limit_N`.
+- **`Observation`**: `time_s`, `position_m`, `velocity_m_s`, `quaternion_xyzw` (body → world), `body_rates_rad_s`, `next_gate`, `lap` (0-based), `gates_passed`, `gate_collisions`, `battery_soc`, `battery_voltage_V`, `thrust_limit_N`.
 - **`Action`**: `thrust_N` (collective thrust along body +z) and `body_rates_rad_s` (p, q, r).
 
 All quantities are SI; the world frame is z-up. The meaning of each value, the limits and what happens when they are exceeded are in [COMPETITION.md](COMPETITION.md). The docstring at the top of `submission/controller.py` summarizes the same interface.
@@ -111,7 +111,7 @@ drone-race replay outputs/submission_competition.json --output outputs/replay.gi
 drone-race make-track outputs/random.json --gates 10 --seed 3     # a seeded random track for testing
 ```
 
-`run` simulates the whole race first, printing each lap as it completes, and only then opens the window, which plays the flight back at real time (`--speed 2` for double speed). Drawing therefore never slows the controller down. The terminal shows the status, score, lap times, missed gates, `act()` timing, peak tilt and battery use.
+`run` simulates the whole race first, printing each lap as it completes, and only then opens the window, which plays the flight back at real time (`--speed 2` for double speed). Drawing therefore never slows the controller down. The terminal shows the status, score, lap times, gate collisions, `act()` timing, peak tilt and battery use.
 
 ### Race files
 
@@ -140,8 +140,8 @@ The default race is `config/races/competition.json`. A race file bundles a track
 
 Every run is saved as JSON in `outputs/` (`outputs/<submission>_<race>.json` unless `--log` is given):
 
-- `summary`: status, score, lap times, gates passed/missed, infractions, `act()` timing (mean, p99, max, deadline misses), peak tilt and load, battery use, thrust-limited steps.
-- `events`: gate passes and misses, laps, wrong-way crossings and the terminal event, with times.
+- `summary`: status, score (`score_s` = time + `penalty_s`), lap times, gates passed, gate collisions, `act()` timing (mean, p99, max, deadline misses), peak tilt and load, battery use, thrust-limited steps.
+- `events`: gate passes, gate collisions (`gate_collision`, one per contact), laps and the terminal event, with times.
 - `samples`: the state, battery, true wind and applied action at every control step.
 - `config`, `scenario`, `realization` (the zone winds the seed drew) and `provenance`.
 

@@ -27,11 +27,11 @@ def rank(summaries: dict[str, dict]) -> list[dict]:
             "score_s": s["score_s"] if s["completed"] else None, "flight_time_s": s["flight_time_s"],
             "penalty_s": s["penalty_s"], "laps_completed": s["laps_completed"], "laps_total": s["laps_total"],
             "lap_times_s": s["lap_times_s"], "fastest_lap_s": s["fastest_lap_s"],
-            "gates_resolved": s["gates_resolved"], "gates_missed": s["gates_missed"], "infractions": s["infractions"],
+            "gates_passed": s["gates_passed"], "gate_collisions": s["gate_collisions"],
             "deadline_misses": s["deadline_misses"], "act_p99_ms": 1e3 * s["controller_p99_act_s"],
             "error": s["error"],
         })
-    rows.sort(key=lambda r: (0, r["score_s"], 0) if r["completed"] else (1, -r["gates_resolved"], -r["flight_time_s"]))
+    rows.sort(key=lambda r: (0, r["score_s"], 0) if r["completed"] else (1, -r["gates_passed"], -r["flight_time_s"]))
     for place, row in enumerate(rows, 1):
         row["rank"] = place
     return rows
@@ -76,7 +76,7 @@ def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=N
         summaries[team], digests[team] = log["summary"], log["provenance"]["submission_sha256"]
         s = log["summary"]
         progress(f"[{team}] {s['status']}  score {s['score_s']:.2f} s  laps {s['laps_completed']}/{s['laps_total']}"
-                 f"  missed {s['gates_missed']}  deadline misses {s['deadline_misses']}")
+                 f"  gate collisions {s['gate_collisions']}  deadline misses {s['deadline_misses']}")
     rows = rank(summaries)
     for row in rows:
         row["submission_sha256"] = digests[row["team"]]

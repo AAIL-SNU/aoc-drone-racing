@@ -89,17 +89,17 @@ def test_submission_can_import_own_modules_and_read_assets(tmp_path):
 
 
 def test_rank_puts_finishers_first_then_progress():
-    base = dict(penalty_s=0, laps_total=2, lap_times_s=[], fastest_lap_s=None, gates_missed=0, infractions=0,
+    base = dict(penalty_s=0, laps_total=2, lap_times_s=[], fastest_lap_s=None, gate_collisions=0,
                 deadline_misses=0, controller_p99_act_s=0.0, error=None)
     summaries = {
         "slow": {**base, "status": "finished", "completed": True, "score_s": 30.0, "flight_time_s": 30.0,
-                 "laps_completed": 2, "gates_resolved": 8},
+                 "laps_completed": 2, "gates_passed": 8},
         "fast": {**base, "status": "finished", "completed": True, "score_s": 20.0, "flight_time_s": 20.0,
-                 "laps_completed": 2, "gates_resolved": 8},
-        "crash_late": {**base, "status": "collision", "completed": False, "score_s": 99.0, "flight_time_s": 9.0,
-                       "laps_completed": 1, "gates_resolved": 6},
-        "crash_early": {**base, "status": "collision", "completed": False, "score_s": 50.0, "flight_time_s": 2.0,
-                        "laps_completed": 0, "gates_resolved": 1},
+                 "laps_completed": 2, "gates_passed": 8},
+        "crash_late": {**base, "status": "out_of_bounds", "completed": False, "score_s": 99.0, "flight_time_s": 9.0,
+                       "laps_completed": 1, "gates_passed": 6},
+        "crash_early": {**base, "status": "out_of_bounds", "completed": False, "score_s": 50.0, "flight_time_s": 2.0,
+                        "laps_completed": 0, "gates_passed": 1},
     }
     assert [r["team"] for r in rank(summaries)] == ["fast", "slow", "crash_late", "crash_early"]
 

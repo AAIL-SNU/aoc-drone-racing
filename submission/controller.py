@@ -33,8 +33,8 @@ act(observation: Observation) is called every control_dt_s with noise-free state
     observation.body_rates_rad_s  (p, q, r) body angular velocity [rad/s]
     observation.next_gate         index of the next gate to pass (judged by the referee); wraps to 0 each lap
     observation.lap               current lap, 0-based (config.laps laps in total)
-    observation.gates_passed      gates flown through so far (all laps)
-    observation.gates_missed      gates resolved as missed so far; passed + missed = lap * n_gates + next_gate
+    observation.gates_passed      gates passed in order so far (all laps) = lap * n_gates + next_gate
+    observation.gate_collisions   contacts with gate frames so far; each adds 5 s to the score
     observation.battery_soc       state of charge, 1 = full; reaching 0 ends the run (battery_depleted)
     observation.battery_voltage_V terminal voltage under the previous step's thrust (sags under load)
     observation.thrust_limit_N    current thrust ceiling = thrust_max_N * (battery_voltage_V / 12.6)^2

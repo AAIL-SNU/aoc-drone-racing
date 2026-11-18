@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
-from drone_race.api import Action, Box, PublicConfig
+from drone_race.api import Action, Box, Gate, PublicConfig
 from drone_race.env import Scenario, run_episode, save_log, validate_action, validate_config
 from drone_race.replay import RaceView, replay
 from drone_race.track import demo_track
@@ -36,7 +36,7 @@ def test_nominal_baseline_completes_all_four_gates(nominal):
     assert nominal["summary"]["lap_times_s"] == [nominal["summary"]["flight_time_s"]]
     assert nominal["summary"]["timing_enforced"] and nominal["provenance"]["isolation"] == "process"
     last = nominal["samples"][-1]
-    assert (last["gates_passed"], last["gates_missed"]) == (4, 0)
+    assert (last["gates_passed"], last["gate_collisions"]) == (4, 0)
 
 
 def test_controller_replacement_hover_is_a_timeout():
@@ -45,6 +45,23 @@ def test_controller_replacement_hover_is_a_timeout():
     assert not log["summary"]["completed"]
     assert log["summary"]["gates_passed"] == 0
     assert log["summary"]["flight_time_s"] == pytest.approx(0.2)
+
+
+def test_hovering_against_a_gate_frame_is_one_contact_and_the_run_continues():
+    # The hover position sits on the inner edge of gate 0's side bar for the whole run.
+    gate = Gate((0.0, 1.0, 1.5))
+    track = replace(CONFIG.track, gates=(gate, *CONFIG.track.gates[1:]))
+    log = run_episode(ROOT / "tests/controllers/hover.py", replace(CONFIG, track=track), Scenario(max_time_s=0.2))
+    s = log["summary"]
+    assert s["status"] == "timeout"
+    assert [e["kind"] for e in log["events"]].count("gate_collision") == s["gate_collisions"] == 1
+    assert s["penalty_s"] == 5.0
+    assert log["samples"][-1]["gate_collisions"] == 1
+
+
+def test_finished_score_is_time_plus_five_seconds_per_gate_collision(nominal):
+    s = nominal["summary"]
+    assert s["score_s"] == pytest.approx(s["flight_time_s"] + 5.0 * s["gate_collisions"])
 
 
 def test_episode_collision_has_failure_status_and_penalty():

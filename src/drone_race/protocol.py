@@ -31,7 +31,7 @@ def observation_to_dict(observation: Observation) -> dict:
         "next_gate": int(observation.next_gate),
         "lap": int(observation.lap),
         "gates_passed": int(observation.gates_passed),
-        "gates_missed": int(observation.gates_missed),
+        "gate_collisions": int(observation.gate_collisions),
         "battery_soc": float(observation.battery_soc),
         "battery_voltage_V": float(observation.battery_voltage_V),
         "thrust_limit_N": float(observation.thrust_limit_N),
@@ -42,7 +42,7 @@ def observation_from_dict(data: dict) -> Observation:
     return Observation(
         data["time_s"], tuple(data["position_m"]), tuple(data["velocity_m_s"]),
         tuple(data["quaternion_xyzw"]), tuple(data["body_rates_rad_s"]), data["next_gate"], data["lap"],
-        data["gates_passed"], data["gates_missed"],
+        data["gates_passed"], data["gate_collisions"],
         data["battery_soc"], data["battery_voltage_V"], data["thrust_limit_N"],
     )
 

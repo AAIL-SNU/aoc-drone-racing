@@ -26,7 +26,7 @@ CONTROLLERS = {
     "mpc": ROOT / "examples/mpc_controller.py",
     "mppi": ROOT / "examples/mppi_controller.py",
 }
-HEADER = (f"{'controller':<10} {'seed':>4} {'status':<14} {'laps':>5} {'missed':>6} {'time [s]':>9} "
+HEADER = (f"{'controller':<10} {'seed':>4} {'status':<14} {'laps':>5} {'contacts':>8} {'time [s]':>9} "
           f"{'score [s]':>9} {'fastest':>8} {'peak tilt':>9} {'p99 act [ms]':>12} {'late':>5}")
 
 
@@ -38,7 +38,7 @@ def run(job):
     s = log["summary"]
     fastest = f"{s['fastest_lap_s']:.2f}" if s["fastest_lap_s"] else "-"
     row = (f"{name:<10} {scenario.seed:>4} {s['status']:<14} "
-           f"{s['laps_completed']:>2}/{s['laps_total']:<2} {s['gates_missed']:>6} {s['flight_time_s']:>9.2f} "
+           f"{s['laps_completed']:>2}/{s['laps_total']:<2} {s['gate_collisions']:>8} {s['flight_time_s']:>9.2f} "
            f"{s['score_s']:>9.2f} {fastest:>8} {s['peak_tilt_deg']:>8.0f}° {1e3 * s['controller_p99_act_s']:>12.1f} "
            f"{s['deadline_misses']:>5}")
     return name, s["completed"], s["score_s"], row

@@ -67,8 +67,8 @@ class Observation:
     body_rates_rad_s: Vec3
     next_gate: int                 # index into config.track.gates, wraps to 0 on every new lap
     lap: int                       # current lap, 0-based
-    gates_passed: int              # gates flown through so far (all laps)
-    gates_missed: int              # gates resolved as missed so far (all laps); passed + missed = gates resolved
+    gates_passed: int              # gates passed in order so far (all laps) = lap * n_gates + next_gate
+    gate_collisions: int           # contacts with gate frames so far (+5 s each in the score)
     battery_soc: float             # state of charge, 1 = full, 0 = depleted (run ends)
     battery_voltage_V: float       # terminal voltage under the previous step's applied thrust
     thrust_limit_N: float          # the thrust is clipped to this observation's thrust_limit_N and flown one control step later

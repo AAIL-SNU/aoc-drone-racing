@@ -57,12 +57,12 @@ def _print_summary(s, log_path):
     if s["completed"]:
         print(f"  score          {s['score_s']:8.2f} s   = time {s['flight_time_s']:.2f} s + penalties {s['penalty_s']:.2f} s")
     else:
-        print(f"  flown          {s['flight_time_s']:8.2f} s   ({s['gates_resolved']}/{s['gates_total']} gates)")
+        print(f"  flown          {s['flight_time_s']:8.2f} s   ({s['gates_passed']}/{s['gates_total']} gates)")
     print(f"  laps           {s['laps_completed']}/{s['laps_total']}"
           + (f"   fastest {s['fastest_lap_s']:.2f} s" if s["fastest_lap_s"] else ""))
     if s["lap_times_s"]:
         print("  lap times      " + "  ".join(f"{t:.2f}" for t in s["lap_times_s"]))
-    print(f"  missed gates   {s['gates_missed']}   wrong-way {s['infractions']}")
+    print(f"  gate contacts  {s['gate_collisions']}   (+{s['penalty_s']:.0f} s)")
     print(f"  act()          mean {1e3 * s['controller_mean_act_s']:.1f} ms   p99 {1e3 * s['controller_p99_act_s']:.1f} ms"
           f"   late {s['deadline_misses']} (budget {1e3 * s['act_budget_s']:.1f} ms"
           + ("" if s["timing_enforced"] else ", not enforced in --debug") + ")")

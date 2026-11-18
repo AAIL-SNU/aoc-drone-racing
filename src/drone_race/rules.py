@@ -35,8 +35,8 @@ def crossing_fraction(start, end, gate: Gate, radius: float, *, forward=True):
     return None
 
 
-def segment_box_fraction(start, end, box: Box, radius: float = 0.0):
-    """Slab intersection with a radius-expanded AABB (conservative sphere sweep)."""
+def segment_box_interval(start, end, box: Box, radius: float = 0.0):
+    """(enter, leave) fractions of the segment inside a radius-expanded AABB (conservative sphere sweep)."""
     a, b = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
     lo, hi = np.asarray(box.lower) - radius, np.asarray(box.upper) + radius
     enter, leave = 0.0, 1.0
@@ -49,7 +49,13 @@ def segment_box_fraction(start, end, box: Box, radius: float = 0.0):
             enter, leave = max(enter, u), min(leave, v)
             if enter > leave:
                 return None
-    return float(enter)
+    return float(enter), float(leave)
+
+
+def segment_box_fraction(start, end, box: Box, radius: float = 0.0):
+    """First contact fraction of the segment with a radius-expanded AABB, or None."""
+    interval = segment_box_interval(start, end, box, radius)
+    return None if interval is None else interval[0]
 
 
 @singledispatch
@@ -82,26 +88,31 @@ class RuleEvent:
     lap: int | None = None
 
 
-# Crossing the next gate's plane forward, outside the opening but at most this far
-# beyond its edge, resolves that gate as missed. A gate flown around entirely is
-# resolved as missed when the drone passes a later gate.
-MISS_WINDOW_M = 2.0
 TERMINAL = {"collision", "out_of_bounds", "finished"}
+_EPS = 1e-12
 
 
 class RaceRules:
-    """Gate order over several laps.
+    """Gate order over several laps, and gate-frame contacts.
 
-    Event kinds: ``gate_passed`` and ``gate_missed`` (each resolves one gate),
-    ``lap_completed``, ``wrong_way`` (an opening crossed backwards; scored as an
-    infraction, never as progress), and the terminal ``finished``, ``collision`` and
-    ``out_of_bounds``. Every event carries the lap it happened in.
+    A gate counts as passed only when it is the next gate in order and the drone's center
+    crosses its opening forward. Crossing any other gate (out of order, or backwards) is
+    ignored: after gate 3, flying through gate 5 does not count, and gate 4 is still next.
+
+    Touching a gate frame does not stop the flight. Each new contact with a gate is one
+    ``gate_collision`` event: continuous contact is one event, separating and touching
+    again is a new one, and touching two bars of the same gate at once is one event.
+
+    Event kinds: ``gate_passed``, ``lap_completed``, ``gate_collision``, and the terminal
+    ``finished``, ``collision`` (an obstacle) and ``out_of_bounds``. Every event carries
+    the lap it happened in.
     """
 
     def __init__(self, track: Track, radius: float, laps: int = 1):
         self.track, self.radius, self.laps = track, radius, laps
         self.count = len(track.gates)
-        self.progress = 0          # gates resolved (passed or missed) since the start
+        self.progress = 0              # gates passed in order since the start
+        self._touching = set()         # gates in contact at the end of the last segment
 
     @property
     def next_gate(self) -> int:
@@ -115,23 +126,31 @@ class RaceRules:
     def finished(self) -> bool:
         return self.progress >= self.laps * self.count
 
+    def _contacts(self, index, gate, start, end):
+        """Fractions where a new contact with this gate's frame begins; updates the contact state."""
+        a, b = gate_local(start, gate), gate_local(end, gate)
+        intervals = sorted(interval for box in frame_boxes(gate)
+                           if (interval := segment_box_interval(a, b, box, self.radius)) is not None)
+        merged = []                    # bars touched at overlapping times form one contact
+        for enter, leave in intervals:
+            if merged and enter <= merged[-1][1] + _EPS:
+                merged[-1][1] = max(merged[-1][1], leave)
+            else:
+                merged.append([enter, leave])
+        starts = [enter for enter, _ in merged if not (enter <= _EPS and index in self._touching)]
+        if merged and merged[-1][1] >= 1 - _EPS:
+            self._touching.add(index)
+        else:
+            self._touching.discard(index)
+        return starts
+
     def _candidates(self, start, end):
         candidates = []
         for index, gate in enumerate(self.track.gates):
-            a, b = gate_local(start, gate), gate_local(end, gate)
-            for box in frame_boxes(gate):
-                alpha = segment_box_fraction(a, b, box, self.radius)
-                if alpha is not None:
-                    candidates.append(RuleEvent("collision", alpha, index))
+            candidates += [RuleEvent("gate_collision", f, index) for f in self._contacts(index, gate, start, end)]
             forward = plane_crossing(start, end, gate, forward=True)
-            if forward is not None:
-                if inside_opening(forward[1], gate, self.radius):
-                    candidates.append(RuleEvent("forward", forward[0], index))
-                elif inside_opening(forward[1], gate, self.radius, MISS_WINDOW_M):
-                    candidates.append(RuleEvent("beside", forward[0], index))
-            backward = plane_crossing(start, end, gate, forward=False)
-            if backward is not None and inside_opening(backward[1], gate, self.radius):
-                candidates.append(RuleEvent("wrong_way", backward[0], index))
+            if forward is not None and inside_opening(forward[1], gate, 0.0):
+                candidates.append(RuleEvent("forward", forward[0], index))
         for obstacle in self.track.obstacles:
             alpha = obstacle_fraction(obstacle, start, end, self.radius)
             if alpha is not None:
@@ -146,11 +165,11 @@ class RaceRules:
                          for j in range(3) for bound in (lo[j], hi[j])
                          if b[j] != a[j] and 0 <= (bound - a[j]) / (b[j] - a[j]) <= 1]
             candidates.append(RuleEvent("out_of_bounds", min(fractions)))
-        return sorted(candidates, key=lambda e: (e.fraction, e.kind != "collision"))
+        return sorted(candidates, key=lambda e: (e.fraction, e.kind == "forward"))
 
-    def _resolve(self, kind: str, fraction: float, events: list) -> None:
+    def _pass(self, fraction: float, events: list) -> None:
         lap = self.lap
-        events.append(RuleEvent(kind, fraction, self.next_gate, lap))
+        events.append(RuleEvent("gate_passed", fraction, self.next_gate, lap))
         self.progress += 1
         if self.progress % self.count == 0:
             events.append(RuleEvent("lap_completed", fraction, None, lap))
@@ -161,21 +180,10 @@ class RaceRules:
         """Events of one straight motion segment, in order; nothing follows a terminal event."""
         events = []
         for event in self._candidates(start, end):
-            if event.kind in ("collision", "out_of_bounds"):
+            if event.kind in ("gate_collision", "collision", "out_of_bounds"):
                 events.append(RuleEvent(event.kind, event.fraction, event.gate, self.lap))
-            elif event.kind == "wrong_way":
-                events.append(RuleEvent("wrong_way", event.fraction, event.gate, self.lap))
-            elif event.kind == "beside" and event.gate == self.next_gate:
-                self._resolve("gate_missed", event.fraction, events)
-            elif event.kind == "forward":
-                ahead = (event.gate - self.next_gate) % self.count
-                if ahead > self.count // 2:
-                    continue          # a gate resolved recently, flown through again
-                for _ in range(ahead):
-                    if not self.finished:
-                        self._resolve("gate_missed", event.fraction, events)
-                if not self.finished:
-                    self._resolve("gate_passed", event.fraction, events)
+            elif event.kind == "forward" and event.gate == self.next_gate and not self.finished:
+                self._pass(event.fraction, events)
             if events and events[-1].kind in TERMINAL:
                 break
         return events
