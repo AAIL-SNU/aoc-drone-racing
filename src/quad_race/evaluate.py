@@ -16,10 +16,11 @@ from .env import run_episode, save_log
 from .race import load_race
 from . import submission as submissions
 from .worker import THREAD_ENV
+from .scoring import POLICY_VERSION, GATE_COLLISION_PENALTY_S
 
 
 def rank(summaries: dict[str, dict]) -> list[dict]:
-    """Finished runs by score; then unfinished ones by progress, then by time survived."""
+    """Rank finishers only; show DQ/DNF below them without a numeric place."""
     rows = []
     for team, s in summaries.items():
         rows.append({
@@ -28,12 +29,16 @@ def rank(summaries: dict[str, dict]) -> list[dict]:
             "penalty_s": s["penalty_s"], "laps_completed": s["laps_completed"], "laps_total": s["laps_total"],
             "lap_times_s": s["lap_times_s"], "fastest_lap_s": s["fastest_lap_s"],
             "gates_resolved": s["gates_resolved"], "gates_missed": s["gates_missed"], "infractions": s["infractions"],
+            "gate_collisions": s.get("gate_collisions", 0),
             "deadline_misses": s["deadline_misses"], "act_p99_ms": 1e3 * s["controller_p99_act_s"],
             "error": s["error"],
         })
     rows.sort(key=lambda r: (0, r["score_s"], 0) if r["completed"] else (1, -r["gates_resolved"], -r["flight_time_s"]))
+    last_score, last_rank = None, None
     for place, row in enumerate(rows, 1):
-        row["rank"] = place
+        if row["completed"] and row["score_s"] != last_score:
+            last_score, last_rank = row["score_s"], place
+        row["rank"] = last_rank if row["completed"] else None
     return rows
 
 
@@ -48,9 +53,11 @@ def docker_prefix(image: str, team_dir: Path, cpu=None, memory="4g") -> list[str
 
 
 def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=None, docker_image=None,
-             teams=None, progress=print) -> list[dict]:
+             teams=None, phase="practice", progress=print) -> list[dict]:
     submissions_dir, out_dir = Path(submissions_dir), Path(out_dir)
     name, config, scenario = load_race(race_path, laps=laps, seed=seed)
+    if phase not in ("practice", "preliminary", "final"):
+        raise ValueError("Unknown competition phase")
     team_dirs = sorted(p for p in submissions_dir.iterdir() if p.is_dir() and (p / submissions.ENTRY).is_file())
     if teams:
         team_dirs = [p for p in team_dirs if p.name in set(teams)]
@@ -70,17 +77,20 @@ def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=N
                               mount_root="/submission" if docker_image else None,
                               isolation="docker" if docker_image else "process")
         if problems:
-            log["summary"].update(status="disqualified", completed=False, error="; ".join(problems))
-        log["race"] = {"name": name, "team": team}
+            log["summary"].update(status="disqualified", completed=False, score_s=None, error="; ".join(problems))
+        log["race"] = {"name": name, "team": team, "phase": phase}
         save_log(log, out_dir / "logs" / f"{team}.json")
         summaries[team], digests[team] = log["summary"], log["provenance"]["submission_sha256"]
         s = log["summary"]
-        progress(f"[{team}] {s['status']}  score {s['score_s']:.2f} s  laps {s['laps_completed']}/{s['laps_total']}"
+        score_text = f"{s['score_s']:.2f} s" if s["score_s"] is not None else "unranked"
+        progress(f"[{team}] {s['status']}  score {score_text}  laps {s['laps_completed']}/{s['laps_total']}"
                  f"  missed {s['gates_missed']}  deadline misses {s['deadline_misses']}")
     rows = rank(summaries)
     for row in rows:
         row["submission_sha256"] = digests[row["team"]]
-    board = {"race": name, "laps": config.laps, "seed": scenario.seed, "track": config.track.name, "results": rows}
+    board = {"race": name, "phase": phase, "laps": config.laps, "seed": scenario.seed,
+             "scoring_policy": {"version": POLICY_VERSION, "gate_collision_penalty_s": GATE_COLLISION_PENALTY_S},
+             "track": config.track.name, "results": rows}
     (out_dir / "leaderboard.json").write_text(json.dumps(board, indent=2) + "\n")
     return rows
 

@@ -61,6 +61,7 @@ def _print_summary(s, log_path):
     if s["lap_times_s"]:
         print("  lap times      " + "  ".join(f"{t:.2f}" for t in s["lap_times_s"]))
     print(f"  missed gates   {s['gates_missed']}   wrong-way {s['infractions']}")
+    print(f"  gate contacts  {s.get('gate_collisions', 0)}  (+5 s per event; no PD qualification)")
     print(f"  act()          mean {1e3 * s['controller_mean_act_s']:.1f} ms   p99 {1e3 * s['controller_p99_act_s']:.1f} ms"
           f"   late {s['deadline_misses']} (budget {1e3 * s['act_budget_s']:.1f} ms"
           + ("" if s["timing_enforced"] else ", not enforced in --debug") + ")")
@@ -104,6 +105,8 @@ def main():
     ev.add_argument("--cpu", type=int, default=None, help="Pin each controller to this CPU core (Linux)")
     ev.add_argument("--docker", default=None, metavar="IMAGE", help="Run each controller in this Docker image")
     ev.add_argument("--teams", nargs="+", default=None, help="Only these team folders")
+    ev.add_argument("--phase", choices=("practice", "preliminary", "final"), default="practice",
+                    help="Keep practice, preliminary and final dashboard standings separate")
 
     play = sub.add_parser("replay", help="Visualize a saved log without simulation")
     play.add_argument("log")
@@ -145,12 +148,13 @@ def main():
     if args.command == "evaluate":
         from .evaluate import evaluate
         rows = evaluate(args.submissions, args.race, args.out, seed=args.seed, laps=args.laps, cpu=args.cpu,
-                        docker_image=args.docker, teams=args.teams)
+                        docker_image=args.docker, teams=args.teams, phase=args.phase)
         print(f"\n{'rank':>4}  {'team':<20} {'status':<18} {'score [s]':>10} {'laps':>6} {'fastest':>8}")
         for row in rows:
             score = f"{row['score_s']:.2f}" if row["score_s"] is not None else "-"
             fastest = f"{row['fastest_lap_s']:.2f}" if row["fastest_lap_s"] is not None else "-"
-            print(f"{row['rank']:>4}  {row['team']:<20} {row['status']:<18} {score:>10} "
+            place = str(row["rank"]) if row["rank"] is not None else "-"
+            print(f"{place:>4}  {row['team']:<20} {row['status']:<18} {score:>10} "
                   f"{row['laps_completed']:>2}/{row['laps_total']:<3} {fastest:>8}")
         print(f"\nLeaderboard: {(Path(args.out) / 'leaderboard.json').resolve()}")
         return

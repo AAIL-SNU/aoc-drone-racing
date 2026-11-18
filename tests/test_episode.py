@@ -49,7 +49,8 @@ def test_episode_collision_has_failure_status_and_penalty():
     log = run_episode(ROOT / "tests/controllers/hover.py", replace(CONFIG, track=track), Scenario(max_time_s=0.2))
     assert log["summary"]["status"] == "collision"
     assert not log["summary"]["completed"]
-    assert log["summary"]["failure_penalty_s"] == 30.0
+    assert log["summary"]["score_s"] is None
+    assert log["summary"]["gate_collisions"] == 0
 
 
 @pytest.mark.parametrize("action", [Action(float("nan"), (0, 0, 0)), Action(5, (0, 0)),

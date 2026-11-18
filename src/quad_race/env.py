@@ -7,6 +7,7 @@ breakpoints; timing is then measured but not enforced.
 
 from dataclasses import asdict, dataclass
 import importlib.metadata
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,7 +19,8 @@ import numpy as np
 from .api import Action, Observation, PublicConfig
 from .plant import RotorPyPlant
 from .protocol import action_from_wire
-from .rules import RaceRules
+from .rules import RaceRules, TERMINAL
+from .scoring import POLICY_VERSION, GATE_COLLISION_PENALTY_S, score_run
 from . import submission as submissions
 from .track import track_to_dict
 from .worker import ControllerError, InlineController, WorkerController
@@ -33,19 +35,15 @@ class Scenario:
     wind_max_m_s: float = 0.0
     mass_error_fraction: float = 0.0
     max_time_s: float | None = None          # None: DEFAULT_SECONDS_PER_LAP per lap
-    gate_miss_penalty_s: float = 5.0
-    infraction_penalty_s: float = 1.0
-    failure_penalty_s: float = 30.0          # diagnostic only; unfinished runs rank after finished ones
 
     def __post_init__(self):
-        values = (self.wind_max_m_s, self.mass_error_fraction, self.gate_miss_penalty_s,
-                  self.infraction_penalty_s, self.failure_penalty_s)
+        values = (self.wind_max_m_s, self.mass_error_fraction)
         if not all(np.isfinite(values)) or (self.max_time_s is not None and not np.isfinite(self.max_time_s)):
             raise ValueError("Scenario values must be finite")
         if not 0 <= self.mass_error_fraction <= 0.2 or not 0 <= self.wind_max_m_s <= 2.0:
             raise ValueError("Prototype supports wind in [0, 2] m/s and mass error in [0, 0.2]")
-        if (self.max_time_s is not None and self.max_time_s <= 0) or min(values[2:]) < 0:
-            raise ValueError("Invalid duration or penalty")
+        if self.max_time_s is not None and self.max_time_s <= 0:
+            raise ValueError("Invalid duration")
 
     def time_limit(self, laps: int) -> float:
         return self.max_time_s if self.max_time_s is not None else DEFAULT_SECONDS_PER_LAP * laps
@@ -183,7 +181,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
                 status, error, done = "simulation_error", str(exc), True
                 break
             step_events = rules.inspect(before["x"], plant.state["x"])
-            terminal = next((e for e in step_events if e.kind in ("finished", "collision", "out_of_bounds")), None)
+            terminal = next((e for e in step_events if e.kind in TERMINAL), None)
             fraction = terminal.fraction if terminal else 1.0
             elapsed = dt * fraction
             load = np.linalg.norm((plant.state["v"] - before["v"]) / dt + [0, 0, config.gravity_m_s2]) / config.gravity_m_s2
@@ -191,7 +189,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
             qx, qy = plant.state["q"][0], plant.state["q"][1]
             peak_tilt = max(peak_tilt, float(np.degrees(np.arccos(np.clip(1 - 2 * (qx * qx + qy * qy), -1, 1)))))
             for event in step_events:
-                events.append({"kind": event.kind, "time_s": time_s + event.fraction * dt,
+                events.append({"event_id": f"event-{len(events) + 1}", "kind": event.kind, "time_s": time_s + event.fraction * dt,
                                "gate": event.gate, "lap": event.lap})
             if terminal:
                 # Terminal position/time use the same linear within-step event estimate.
@@ -216,8 +214,7 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, mass
     lap_times = list(np.diff([0.0, *lap_ends]))
     missed = sum(e["kind"] == "gate_missed" for e in events)
     infractions = sum(e["kind"] == "wrong_way" for e in events)
-    penalty = scenario.gate_miss_penalty_s * missed + scenario.infraction_penalty_s * infractions
-    failure = 0.0 if status == "finished" else scenario.failure_penalty_s
+    score = score_run(status, time_s, events)
     times = np.asarray(act_times) if act_times else np.zeros(1)
     summary = {
         "status": status, "completed": status == "finished", "flight_time_s": time_s,
@@ -225,9 +222,8 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, mass
         "lap_times_s": [float(t) for t in lap_times], "fastest_lap_s": float(min(lap_times)) if lap_times else None,
         "gates_total": config.laps * len(config.track.gates), "gates_resolved": rules.progress,
         "gates_passed": sum(e["kind"] == "gate_passed" for e in events), "gates_missed": missed,
-        "infractions": infractions, "penalty_s": penalty, "failure_penalty_s": failure,
-        # DNF scores are diagnostics only and must never rank ahead of completed runs.
-        "score_s": time_s + penalty + failure,
+        "infractions": infractions, "failure_penalty_s": 0.0,
+        **score,
         "peak_load_g": peak_load, "peak_tilt_deg": peak_tilt,
         "controller_reset_s": init_time,
         "controller_mean_act_s": float(times.mean()), "controller_p99_act_s": float(np.percentile(times, 99)),
@@ -237,9 +233,12 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, mass
     }
     return {
         "schema_version": SCHEMA_VERSION, "config": {**asdict(config), "track": track_to_dict(config.track)},
+        "scoring_policy": {"version": POLICY_VERSION, "gate_collision_penalty_s": GATE_COLLISION_PENALTY_S},
         "scenario": asdict(scenario),
         "realization": {"mass_scale": mass_scale, "wind_phase_rad": phase.tolist()},
         "provenance": {
+            "simulator_sha256": hashlib.sha256(b"".join(p.name.encode() + p.read_bytes()
+                for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest(),
             "submission_sha256": digest, "submission": sub.entry.name if sub.entry.name != "controller.py" else sub.root.name,
             "isolation": isolation or ("inline" if debug else "process"),
             "third_party_modules": modules, "python": platform.python_version(),

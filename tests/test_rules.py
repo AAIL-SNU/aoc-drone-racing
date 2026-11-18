@@ -26,15 +26,14 @@ def test_reverse_crossing_is_an_infraction_without_progress():
 def test_passing_a_later_gate_resolves_the_skipped_one_as_missed():
     rules = RaceRules(course(Gate((0., 0., 2.)), Gate((3., 0., 2.))), 0.2)
     events = rules.inspect((2, 0, 2), (4, 0, 2))
-    assert [(e.kind, e.gate) for e in events] == [("gate_missed", 0), ("gate_passed", 1),
-                                                   ("lap_completed", None), ("finished", None)]
+    assert [(e.kind, e.gate) for e in events] == [("gate_missed", 0)]
 
 
 def test_flying_beside_the_next_gate_is_a_miss_but_far_away_is_not():
     rules = RaceRules(course(Gate((0., 0., 2.)), Gate((3., 0., 2.))), 0.2)
     assert rules.inspect((-1, 5, 2), (1, 5, 2)) == []          # more than MISS_WINDOW_M beyond the frame
     assert [(e.kind, e.gate) for e in rules.inspect((-1, 2, 2), (1, 2, 2))] == [("gate_missed", 0)]
-    assert rules.next_gate == 1
+    assert rules.next_gate == 0
 
 
 def test_laps_wrap_gate_index_and_count_laps():
@@ -60,8 +59,8 @@ def test_fast_motion_through_two_gates_is_ordered():
 def test_vehicle_volume_hits_frame_even_when_center_is_inside_opening():
     rules = RaceRules(course(Gate((0., 0., 2.))), 0.2)
     events = rules.inspect((-1, 0.9, 2), (1, 0.9, 2))
-    assert events[0].kind == "collision"
-    assert rules.next_gate == 0
+    assert [e.kind for e in events] == ["gate_collision", "gate_passed", "lap_completed", "finished"]
+    assert rules.finished
 
 
 def test_swept_collision_does_not_tunnel_through_thin_obstacle():
@@ -87,7 +86,7 @@ def test_finish_before_later_obstacle_stops_race():
 def test_gate_miss_outside_frame_is_not_a_pass():
     rules = RaceRules(course(Gate((0., 0., 2.)), Gate((5., 0., 2.))), 0.2)
     assert [e.kind for e in rules.inspect((-1, 2, 2), (1, 2, 2))] == ["gate_missed"]
-    assert rules.next_gate == 1
+    assert rules.next_gate == 0
 
 
 def test_out_of_bounds_checks_vehicle_radius():
