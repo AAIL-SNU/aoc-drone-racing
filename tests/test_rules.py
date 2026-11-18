@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from quad_race.api import Box, Gate, Track
-from quad_race.rules import RaceRules, crossing_fraction, segment_box_fraction
+from drone_race.api import Box, Gate, Track
+from drone_race.rules import RaceRules, crossing_fraction, segment_box_fraction
 
 
 def course(*gates, obstacles=()):

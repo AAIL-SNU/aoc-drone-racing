@@ -6,12 +6,14 @@ from scipy.spatial.transform import Rotation
 from .api import Action, Observation, PublicConfig
 
 
-def track_position(observation: Observation, target, config: PublicConfig) -> Action:
+def track_position(observation: Observation, target, config: PublicConfig, *, target_velocity=(0.0, 0.0, 0.0),
+                   kp: float = 2.0, kd: float = 2.8, max_accel: float = 3.0) -> Action:
+    """PD on position/velocity to a desired acceleration, then thrust along it and rates to tilt there."""
     position, velocity = np.asarray(observation.position_m), np.asarray(observation.velocity_m_s)
-    acceleration = 2.0 * (np.asarray(target) - position) - 2.8 * velocity
+    acceleration = kp * (np.asarray(target) - position) + kd * (np.asarray(target_velocity) - velocity)
     norm = np.linalg.norm(acceleration)
-    if norm > 3.0:
-        acceleration *= 3.0 / norm
+    if norm > max_accel:
+        acceleration *= max_accel / norm
     force = config.nominal_mass_kg * (acceleration + [0, 0, config.gravity_m_s2])
     rotation = Rotation.from_quat(observation.quaternion_xyzw).as_matrix()
     thrust = float(force @ rotation[:, 2])
@@ -22,4 +24,4 @@ def track_position(observation: Observation, target, config: PublicConfig) -> Ac
     skew = 0.5 * (desired.T @ rotation - rotation.T @ desired)
     error = np.array([-skew[1, 2], skew[0, 2], -skew[0, 1]])
     rates = np.clip(-6.0 * error, -config.body_rate_limit_rad_s, config.body_rate_limit_rad_s)
-    return Action(float(np.clip(thrust, config.thrust_min_N, config.thrust_max_N)), tuple(rates))
+    return Action(float(np.clip(thrust, config.thrust_min_N, observation.thrust_limit_N)), tuple(rates))

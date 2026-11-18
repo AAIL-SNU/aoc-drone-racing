@@ -7,15 +7,15 @@ import textwrap
 
 import pytest
 
-from quad_race.api import PublicConfig
-from quad_race.env import Scenario, run_episode
-from quad_race.evaluate import check, evaluate, rank
-from quad_race.track import demo_track, save_track
+from drone_race.api import PublicConfig
+from drone_race.env import Scenario, run_episode
+from drone_race.evaluate import check, evaluate, rank
+from drone_race.track import demo_track, save_track
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = PublicConfig(demo_track())
 HOVER = """
-from quad_race import Action
+from drone_race import Action
 class Controller:
     def reset(self, config):
         self.thrust = config.nominal_mass_kg * config.gravity_m_s2
@@ -33,7 +33,7 @@ def controller(tmp_path, body="", name="team"):
 
 
 def test_worker_and_debug_runs_are_identical():
-    scenario = Scenario(seed=3, wind_max_m_s=0.5, mass_error_fraction=0.05, max_time_s=3.0)
+    scenario = Scenario(seed=3, turbulence_m_s=0.6, max_time_s=3.0)
     worker = run_episode(ROOT / "submission", CONFIG, scenario)
     inline = run_episode(ROOT / "submission", CONFIG, scenario, debug=True)
     strip = lambda log: [{k: v for k, v in s.items() if k not in ("act_s", "late")} for s in log["samples"]]
@@ -47,8 +47,11 @@ BUSY = "import time\nt = time.process_time()\nwhile time.process_time() - t < 0.
 def test_late_act_holds_previous_action_and_is_counted(tmp_path):
     slow = controller(tmp_path, BUSY)
     log = run_episode(slow, CONFIG, Scenario(max_time_s=0.2))
-    assert log["summary"]["deadline_misses"] == 10
-    assert all(s["late"] for s in log["samples"][1:])
+    # Each 30 ms call keeps the controller busy for two 20 ms control steps: 5 calls in 0.2 s.
+    assert log["summary"]["deadline_misses"] == 5
+    called = [s for s in log["samples"][1:] if s["act_s"] is not None]
+    assert len(called) == 5 and all(s["late"] for s in called)
+    assert len(log["samples"]) == 11 and log["samples"][-1]["time_s"] == pytest.approx(0.2)
     relaxed = run_episode(slow, CONFIG, Scenario(max_time_s=0.2), budget_scale=3.0)
     assert relaxed["summary"]["deadline_misses"] == 0
 
@@ -117,5 +120,5 @@ def test_evaluate_writes_logs_and_leaderboard(tmp_path):
 
 
 def test_check_accepts_the_baseline_and_rejects_a_broken_submission(tmp_path):
-    assert check(ROOT / "submission", ROOT / "config/races/practice.json", seconds=0.5, progress=lambda *_: None)
+    assert check(ROOT / "submission", ROOT / "config/races/competition.json", seconds=0.5, progress=lambda *_: None)
     assert not check(controller(tmp_path, "raise ValueError('bad')"), seconds=0.2, progress=lambda *_: None)

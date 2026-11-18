@@ -5,8 +5,8 @@ matplotlib.use("Agg")
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from quad_race.replay import RaceView
-from quad_race.track import demo_track
+from drone_race.replay import RaceView
+from drone_race.track import demo_track
 
 
 def test_vehicle_mesh_follows_world_pose_and_keeps_log_unchanged():

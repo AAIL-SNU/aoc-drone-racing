@@ -150,7 +150,7 @@ def check(submission, race_path=None, *, seconds=3.0, progress=print) -> bool:
     ok &= not crashed
     used = log["provenance"]["third_party_modules"]
     if pins:
-        outside = [m for m in used if _normalize(m) not in pins and _normalize(m) != "quad-race"]
+        outside = [m for m in used if _normalize(m) not in pins and _normalize(m) != "drone-race"]
         progress("packages     " + (", ".join(used) or "none beyond the standard library"))
         if outside:
             progress(f"  ✗ not in the official environment: {', '.join(outside)}")

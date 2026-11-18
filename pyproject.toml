@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quad-race"
+name = "drone-race"
 version = "0.1.0"
 description = "A small, reproducible controller-submission racing prototype powered by RotorPy"
 requires-python = ">=3.12,<3.13"
@@ -13,10 +13,10 @@ dependencies = ["rotorpy==3.0.0", "numpy>=1.26", "scipy>=1.12", "matplotlib>=3.8
 dev = ["pytest>=8"]
 
 [project.scripts]
-drone-race = "quad_race.cli:main"
+drone-race = "drone_race.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quad_race"]
+packages = ["src/drone_race"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

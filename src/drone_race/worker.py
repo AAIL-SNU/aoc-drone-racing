@@ -1,6 +1,6 @@
 """Run a submission in its own process and talk to it over JSON lines.
 
-Host side: ``WorkerController`` starts ``python -m quad_race.worker`` (optionally
+Host side: ``WorkerController`` starts ``python -m drone_race.worker`` (optionally
 inside ``docker run ...``) and exchanges one message per reset()/act() call.
 ``InlineController`` loads the submission into the simulator's own process instead;
 it exists for debugging (breakpoints, print-heavy work) and does not enforce timing.
@@ -57,12 +57,12 @@ class WorkerController:
         root = Path(mount_root) if mount_root else submission.root
         entry = root / submission.entry.relative_to(submission.root)
         if command_prefix:
-            command = [*command_prefix, "python", "-m", "quad_race.worker", entry.as_posix(), root.as_posix()]
+            command = [*command_prefix, "python", "-m", "drone_race.worker", entry.as_posix(), root.as_posix()]
         else:
-            command = [sys.executable, "-m", "quad_race.worker", str(entry), str(root)]
+            command = [sys.executable, "-m", "drone_race.worker", str(entry), str(root)]
         env = {**os.environ, **THREAD_ENV}
         if cpu is not None:
-            env["QUAD_RACE_CPU"] = str(cpu)
+            env["DRONE_RACE_CPU"] = str(cpu)
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                                         env=env, text=True, bufsize=1)
         self.replies = queue.Queue()
@@ -183,7 +183,7 @@ def third_party_modules(root) -> list[str]:
     found = set()
     for name, module in list(sys.modules.items()):
         top = name.partition(".")[0]
-        if "." in name or top in sys.stdlib_module_names or top.startswith("_") or top in {"quad_race", "controller"}:
+        if "." in name or top in sys.stdlib_module_names or top.startswith("_") or top in {"drone_race", "controller"}:
             continue
         origin = getattr(module, "__file__", None)
         if origin is None:
@@ -202,7 +202,7 @@ def main(argv=None):
     entry, root = (argv or sys.argv[1:])[:2]
     protocol = os.fdopen(os.dup(1), "w", buffering=1)
     os.dup2(2, 1)                                   # student prints go to stderr
-    cpu = os.environ.get("QUAD_RACE_CPU")
+    cpu = os.environ.get("DRONE_RACE_CPU")
     if cpu is not None and hasattr(os, "sched_setaffinity"):
         os.sched_setaffinity(0, {int(cpu)})
 

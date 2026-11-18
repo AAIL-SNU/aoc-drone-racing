@@ -48,7 +48,11 @@ def quat_exp(rotation_vector):
 
 # ---------------------------------------------------------------- model
 class QuadModel:
-    """x = [p(3), v(3), q_xyzw(4), w(3)], u = [thrust_N, p_cmd, q_cmd, r_cmd]. Works on any batch shape."""
+    """x = [p(3), v(3), q_xyzw(4), w(3)], u = [thrust_N, p_cmd, q_cmd, r_cmd]. Works on any batch shape.
+
+    u_high[0] starts at the full-charge thrust_max_N; the battery lowers the real ceiling
+    (observation.thrust_limit_N, drone_race.battery), so update it every step.
+    """
 
     NX, NU = 13, 4
 
@@ -95,7 +99,7 @@ def state_from_observation(observation) -> np.ndarray:
 
 
 class DisturbanceObserver:
-    """Low-pass estimate of the acceleration the model misses (mass error, wind, model error)."""
+    """Low-pass estimate of the acceleration the model misses (wind and model error)."""
 
     def __init__(self, config: PublicConfig, gain: float = 0.1, limit: float = 4.0, substeps: int = 5):
         self.model = QuadModel(config, config.control_dt_s / substeps)

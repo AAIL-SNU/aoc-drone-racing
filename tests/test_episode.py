@@ -7,10 +7,11 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
-from quad_race.api import Action, Box, PublicConfig
-from quad_race.env import Scenario, run_episode, save_log, validate_action, validate_config
-from quad_race.replay import RaceView, replay
-from quad_race.track import demo_track
+from drone_race.api import Action, Box, PublicConfig
+from drone_race.env import Scenario, run_episode, save_log, validate_action, validate_config
+from drone_race.replay import RaceView, replay
+from drone_race.track import demo_track
+from drone_race.wind import WindZone, zone_weight
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "submission"
@@ -34,6 +35,8 @@ def test_nominal_baseline_completes_all_four_gates(nominal):
     assert nominal["summary"]["flight_time_s"] < 45
     assert nominal["summary"]["lap_times_s"] == [nominal["summary"]["flight_time_s"]]
     assert nominal["summary"]["timing_enforced"] and nominal["provenance"]["isolation"] == "process"
+    last = nominal["samples"][-1]
+    assert (last["gates_passed"], last["gates_missed"]) == (4, 0)
 
 
 def test_controller_replacement_hover_is_a_timeout():
@@ -53,7 +56,7 @@ def test_episode_collision_has_failure_status_and_penalty():
 
 
 @pytest.mark.parametrize("action", [Action(float("nan"), (0, 0, 0)), Action(5, (0, 0)),
-                                     Action(100, (0, 0, 0)), Action(5, (4, 0, 0)),
+                                     Action(5, (4, 0, 0)),
                                      Action(5, (0, float("inf"), 0)), None])
 def test_invalid_action_rejected(action):
     with pytest.raises(ValueError):
@@ -62,7 +65,7 @@ def test_invalid_action_rejected(action):
 
 def test_invalid_submission_is_reported_in_score(tmp_path):
     path = tmp_path / "controller.py"
-    path.write_text("from quad_race import Action\nclass Controller:\n def reset(self,c): pass\n def act(self,o): return Action(float('nan'),(0,0,0))\n")
+    path.write_text("from drone_race import Action\nclass Controller:\n def reset(self,c): pass\n def act(self,o): return Action(float('nan'),(0,0,0))\n")
     assert run_episode(path, CONFIG)["summary"]["status"] == "invalid_action"
 
 
@@ -89,17 +92,25 @@ def test_log_roundtrip_and_replay_does_not_change_log(nominal, tmp_path):
     assert output.stat().st_size > 1000
 
 
-def test_small_wind_and_mass_error_reproducible_and_completes():
-    scenario = Scenario(seed=17, wind_max_m_s=0.5, mass_error_fraction=0.05)
+def test_small_wind_reproducible_and_completes():
+    zone = WindZone("breeze", (-2.0, -5.0, 0.0), (18.0, 5.0, 6.0), (0.0, 1.0, 0.0), (0.3, 0.6), 30.0)
+    scenario = Scenario(seed=17, turbulence_m_s=0.3, wind_zones=(zone,))
     a, b = run_episode(BASELINE, CONFIG, scenario), run_episode(BASELINE, CONFIG, scenario)
     assert a["summary"]["completed"], a["summary"]
     assert flight(a) == flight(b)
     assert a["events"] == b["events"]
     assert a["summary"]["score_s"] == b["summary"]["score_s"]
-    assert max(np.linalg.norm(s["wind_m_s"]) for s in a["samples"]) <= scenario.wind_max_m_s
-    assert 0.95 <= a["realization"]["mass_scale"] <= 1.05
+    assert 0.3 <= np.linalg.norm(a["realization"]["zone_wind_m_s"]["breeze"]) <= 0.6
+    assert np.std([s["wind_m_s"] for s in a["samples"]], axis=0).max() > 0.05   # turbulence is present
     c = run_episode(BASELINE, CONFIG, replace(scenario, seed=18, max_time_s=0.1))
     assert c["realization"] != a["realization"]
+
+
+def test_wind_zone_fades_outside_its_box():
+    zone = WindZone("z", (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (1.0, 0.0, 0.0), (1.0, 1.0), ramp_m=0.5)
+    assert zone_weight(zone, (0.5, 0.5, 0.5)) == 1.0
+    assert 0.0 < zone_weight(zone, (1.25, 0.5, 0.5)) < 1.0
+    assert zone_weight(zone, (1.6, 0.5, 0.5)) == 0.0
 
 
 def test_physics_step_halving_has_consistent_completion(nominal):
@@ -109,7 +120,7 @@ def test_physics_step_halving_has_consistent_completion(nominal):
 
 
 def test_plant_preserves_students_numpy_rng():
-    from quad_race.plant import RotorPyPlant
+    from drone_race.plant import RotorPyPlant
     state = np.random.get_state()
     try:
         np.random.seed(123)
