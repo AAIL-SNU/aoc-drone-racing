@@ -16,7 +16,7 @@ This document is the rulebook: the race, the vehicle, the disturbances, the cons
 3. The TAs run every submission on the official Linux server, all on **the same circuit with the same disturbance**, and record times and scores.
 4. A video is rendered from each participant's flight trajectory.
 5. On competition day the running order is drawn at random. The videos are played in that order on the dashboard web page, and the leaderboard is updated live. The dashboard shows the flight video together with the flight path, lap times and fastest lap.
-6. The final ranking is decided by the score (Section 8).
+6. The final ranking is decided by the score (Section 9).
 7. (Optional, time permitting) The winner receives a small 3D-printed trophy. It has no effect on grades.
 
 ## 3. The race
@@ -48,7 +48,7 @@ The plant is [RotorPy](https://github.com/spencerfolk/rotorpy)'s AscTec Hummingb
 
 **Action.** Every control step the controller returns a collective thrust T [N] along body +z and a body-rate command ω_cmd = (p, q, r) [rad/s]. A built-in rate loop tracks the command, ω̇ ≈ 25 (ω_cmd − ω), followed by motor allocation, rotor saturation and motor lag.
 
-**Observation.** Noise-free: time, position, velocity, attitude quaternion (x, y, z, w; body → world), body rates, the next gate to pass, the current lap, the number of gates passed and missed so far, and the battery state (state of charge, terminal voltage, current thrust limit). The wind is **not** observed.
+**Observation.** Noise-free: time, position, velocity, attitude quaternion (x, y, z, w; body → world), body rates, the next gate to pass, the current lap, the number of gates passed and gate collisions so far, and the battery state (state of charge, terminal voltage, current thrust limit). The wind is **not** observed.
 
 **Control rate and delay.**
 - The controller runs at **50 Hz** (`control_dt_s = 0.02`). The TAs may adjust this after testing.
@@ -82,7 +82,7 @@ The wind is an air velocity in the world frame. It acts on the drone only throug
 | Battery | 3S LiPo model (`drone_race.battery`, equations below). Reaching zero charge ends the run as `battery_depleted`. The 500 mAh pack is sized so that an aggressive controller still finishes 5 laps with most of its charge left; the battery costs time through the lower thrust limit, not by running out. |
 | Maximum tilt | **TBD.** A real racing drone needs its camera to see ahead, so tilt will be limited. The limit and how violations are handled are not decided; for now only `peak_tilt_deg` is logged. |
 | Arena | The collision sphere must stay inside the arena box (`out_of_bounds` otherwise). |
-| Gate frames | The swept collision sphere must not touch a gate bar (`collision` otherwise). |
+| Gate frames | Touching a gate bar with the collision sphere adds 5 s per collision; the flight continues (Section 9). |
 
 **Battery model.** With T the applied (clipped) thrust and SoC ∈ [0, 1]:
 
@@ -130,20 +130,25 @@ submission/
 The **score** is a time in seconds; **lower is better**:
 
 ```
-score = T_finish + 5 s × (infractions)
+score = T_finish + 5 s × (gate collisions)
 ```
 
-- **T_finish** is the simulated time at which the drone crosses the finish line (gate 9) at the end of lap 5, interpolated within the physics step.
-- **Gate passed:** the center of the drone crosses the next gate's plane in its +x direction while inside the opening shrunk by the vehicle radius, i.e. within ±(1.0 − 0.28) = ±0.72 m of the gate center in both directions of the gate plane.
-- **Gate missed (+5 s, the race continues):**
-  - the drone crosses the next gate's plane forward outside the shrunk opening but no more than 2 m beyond its edge, or
-  - the drone skips the next gate and passes a later one (at most half a lap ahead); every skipped gate counts as missed.
-- **Infraction (+1 s):** currently only `wrong_way`, i.e. passing through any gate's opening backwards. It never counts as progress. Tilt and battery rules may add infractions later.
-- **Did not finish (DNF):** the run ends without completing 5 laps when the drone
-  - touches a gate frame (`collision`) or leaves the arena (`out_of_bounds`),
-  - empties the battery (`battery_depleted`),
-  - runs out of time (`timeout`),
-  - raises an exception (`controller_error`), hangs (`controller_timeout`) or returns an invalid action (`invalid_action`),
-  - or the physics becomes non-finite (`simulation_error`).
-- **Ranking.** Finished runs are ranked by score. Every DNF ranks below every finished run; among DNFs, more gates resolved (passed or missed) ranks higher, then a longer flight time. A disqualified submission is ranked as not finished.
+- **T_finish** is the simulated time at which the drone passes the finish line (gate 9) at the end of lap 5, interpolated within the physics step.
+- **Gate passed:** the center of the drone crosses the gate's plane in its +x direction inside the 2 m × 2 m opening, **and the gate is the next one in order**. Gates must be passed strictly in order (0 → 9 on every lap):
+  - crossing any other gate does not count; after gate 3, flying through gate 5 does not pass gate 5, and gate 4 is still the next gate;
+  - crossing a gate backwards does not count;
+  - a gate that is never passed in order means the race cannot be completed (eventually `timeout`).
+- **Gate collision (+5 s, the flight continues):** the collision sphere (radius 0.28 m) touches a gate frame bar. There is no impact physics; the drone flies on.
+  - Continuous contact is one collision, however long it lasts.
+  - Separating from the frame and touching it again is a new collision.
+  - Touching two bars of the same gate at the same time is one collision.
+  - Brushing a bar while the center crosses inside the opening counts both the pass and the collision.
+- **Did not finish (DNF):** the run ends without completing 5 laps when
+  - the drone leaves the arena (`out_of_bounds`),
+  - the battery is empty (`battery_depleted`),
+  - the time limit is reached (`timeout`),
+  - the controller raises an exception (`controller_error`), hangs (`controller_timeout`) or returns an invalid action (`invalid_action`).
+
+  On tracks with obstacles, hitting one also ends the run (`collision`); the competition circuit has none. A non-finite physics state ends the run as `simulation_error` and is reviewed by the TAs.
+- **Ranking.** Finished runs are ranked by score. Every DNF ranks below every finished run; among DNFs, more gates passed ranks higher, then a longer flight time. A disqualified submission is ranked as not finished.
 - **Official result.** The log produced on the scoring server is final. Re-running the same seed can give slightly different results, because compute-time jitter can change which `act()` calls are late.

@@ -91,7 +91,7 @@ def test_worker_controller_receives_battery_and_gate_fields(tmp_path):
         "class Controller:\n"
         " def reset(self, c): self.n = len(c.track.gates)\n"
         " def act(self, o):\n"
-        "  assert o.gates_passed + o.gates_missed == o.lap * self.n + o.next_gate\n"
+        "  assert o.gates_passed == o.lap * self.n + o.next_gate and o.gate_collisions == 0\n"
         "  assert 0 < o.battery_soc <= 1 and o.battery_voltage_V > 9\n"
         "  return Action(o.thrust_limit_N, (0.0, 0.0, 0.0))\n")
     log = run_episode(path, CONFIG, Scenario(max_time_s=0.2))

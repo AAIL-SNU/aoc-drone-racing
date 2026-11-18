@@ -53,4 +53,4 @@ def test_competition_circuit_is_closed_and_flyable():
     for a, b in zip(line.position[:-1], line.position[1:]):
         kinds += [e.kind for e in rules.inspect(a, b)]
     assert kinds.count("gate_passed") == 20 and kinds[-1] == "finished"
-    assert not {"collision", "out_of_bounds", "gate_missed", "wrong_way"} & set(kinds)
+    assert not {"collision", "out_of_bounds", "gate_collision"} & set(kinds)

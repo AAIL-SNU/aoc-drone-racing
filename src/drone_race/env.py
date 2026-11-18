@@ -25,7 +25,7 @@ from . import submission as submissions
 from .track import track_to_dict
 from .worker import ControllerError, InlineController, WorkerController
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DEFAULT_SECONDS_PER_LAP = 45.0
 
 
@@ -35,14 +35,13 @@ class Scenario:
     turbulence_m_s: float = 0.0              # horizontal turbulence std; vertical is half (see drone_race.wind)
     wind_zones: tuple[WindZone, ...] = ()    # wind boxes on the course; the seed draws each zone's strength
     max_time_s: float | None = None          # None: DEFAULT_SECONDS_PER_LAP per lap
-    gate_miss_penalty_s: float = 5.0
-    infraction_penalty_s: float = 1.0
+    gate_collision_penalty_s: float = 5.0    # per contact with a gate frame (the flight continues)
     failure_penalty_s: float = 30.0          # diagnostic only; unfinished runs rank after finished ones
 
     def __post_init__(self):
         zones = tuple(z if isinstance(z, WindZone) else WindZone(**z) for z in self.wind_zones)
         object.__setattr__(self, "wind_zones", zones)
-        values = (self.turbulence_m_s, self.gate_miss_penalty_s, self.infraction_penalty_s, self.failure_penalty_s)
+        values = (self.turbulence_m_s, self.gate_collision_penalty_s, self.failure_penalty_s)
         if not all(np.isfinite(values)) or (self.max_time_s is not None and not np.isfinite(self.max_time_s)):
             raise ValueError("Scenario values must be finite")
         if not 0 <= self.turbulence_m_s <= 2.0:
@@ -72,9 +71,9 @@ def clip_thrust(action: Action, config: PublicConfig, thrust_limit: float) -> Ac
     return Action(float(np.clip(action.thrust_N, config.thrust_min_N, thrust_limit)), action.body_rates_rad_s)
 
 
-def observation(state, time_s: float, rules, gates_passed: int, gates_missed: int, battery: Battery) -> Observation:
+def observation(state, time_s: float, rules, gate_collisions: int, battery: Battery) -> Observation:
     return Observation(time_s, tuple(state["x"]), tuple(state["v"]), tuple(state["q"]), tuple(state["w"]),
-                       rules.next_gate, rules.lap, gates_passed, gates_missed,
+                       rules.next_gate, rules.lap, rules.progress, gate_collisions,
                        battery.soc, battery.voltage, battery.thrust_limit)
 
 
@@ -136,7 +135,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
     battery = Battery(config)
     records, events, act_times = [], [], []
     time_s, peak_load, peak_tilt, misses = 0.0, 0.0, 0.0, 0
-    gates_passed, gates_missed, saturated = 0, 0, 0
+    gate_collisions, saturated = 0, 0
     status, error, init_time, modules = "timeout", None, 0.0, []
     budget = config.act_budget_s * budget_scale
     started = time.perf_counter()
@@ -146,7 +145,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
         item = {"time_s": time_s, "position_m": plant.state["x"].tolist(),
                 "velocity_m_s": plant.state["v"].tolist(), "quaternion_xyzw": plant.state["q"].tolist(),
                 "body_rates_rad_s": plant.state["w"].tolist(), "next_gate": rules.next_gate, "lap": rules.lap,
-                "gates_passed": gates_passed, "gates_missed": gates_missed,
+                "gates_passed": rules.progress, "gate_collisions": gate_collisions,
                 "battery_soc": battery.soc, "battery_voltage_V": battery.voltage,
                 "thrust_limit_N": battery.thrust_limit,
                 "wind_m_s": plant.state["wind"].tolist(), "action": asdict(action) if action else None,
@@ -174,7 +173,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
     while time_s < max_time - 1e-12 and not done:
         try:
             limit = battery.thrust_limit          # the limit this observation reports
-            reply = handle.act(observation(plant.state, time_s, rules, gates_passed, gates_missed, battery),
+            reply = handle.act(observation(plant.state, time_s, rules, gate_collisions, battery),
                                timeout=hard_act_timeout(budget))
         except ControllerError as exc:
             status, error = exc.status, str(exc)
@@ -228,8 +227,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
                 for event in step_events:
                     events.append({"kind": event.kind, "time_s": time_s + event.fraction * dt,
                                    "gate": event.gate, "lap": event.lap})
-                    gates_passed += event.kind == "gate_passed"
-                    gates_missed += event.kind == "gate_missed"
+                    gate_collisions += event.kind == "gate_collision"
                 if terminal:
                     # Terminal position/time use the same linear within-step event estimate.
                     plant.state = {key: before[key] + fraction * (value - before[key]) for key, value in plant.state.items()}
@@ -260,19 +258,18 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, real
          battery, saturated):
     lap_ends = [e["time_s"] for e in events if e["kind"] == "lap_completed"]
     lap_times = list(np.diff([0.0, *lap_ends]))
-    missed = sum(e["kind"] == "gate_missed" for e in events)
-    infractions = sum(e["kind"] == "wrong_way" for e in events)
-    penalty = scenario.gate_miss_penalty_s * missed + scenario.infraction_penalty_s * infractions
+    collisions = sum(e["kind"] == "gate_collision" for e in events)
+    penalty = scenario.gate_collision_penalty_s * collisions
     failure = 0.0 if status == "finished" else scenario.failure_penalty_s
     times = np.asarray(act_times) if act_times else np.zeros(1)
     summary = {
         "status": status, "completed": status == "finished", "flight_time_s": time_s,
         "laps_total": config.laps, "laps_completed": len(lap_ends),
         "lap_times_s": [float(t) for t in lap_times], "fastest_lap_s": float(min(lap_times)) if lap_times else None,
-        "gates_total": config.laps * len(config.track.gates), "gates_resolved": rules.progress,
-        "gates_passed": sum(e["kind"] == "gate_passed" for e in events), "gates_missed": missed,
-        "infractions": infractions, "penalty_s": penalty, "failure_penalty_s": failure,
-        # DNF scores are diagnostics only and must never rank ahead of completed runs.
+        "gates_total": config.laps * len(config.track.gates), "gates_passed": rules.progress,
+        "gate_collisions": collisions, "penalty_s": penalty, "failure_penalty_s": failure,
+        # score = T_finish + gate_collision_penalty_s * gate_collisions. DNF scores are
+        # diagnostics only and must never rank ahead of completed runs.
         "score_s": time_s + penalty + failure,
         "peak_load_g": peak_load, "peak_tilt_deg": peak_tilt,
         "battery_final_soc": max(battery.soc, 0.0),
