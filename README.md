@@ -17,7 +17,6 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 | `config/races/` | Race files (track + laps + disturbance); `competition.json` is the default | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
 | `tests/` | Tests of the simulator itself | No |
-| `.github/` | The automatic check that runs on every push | No |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
 
 ## Installation
@@ -160,8 +159,6 @@ drone-race bench
 ```bash
 drone-race check                # layout, size, packages and a short flight: must end with "OK"
 ```
-
-Pushing to GitHub runs the same check on Linux with the official package pins (`.github/workflows/check.yml`). It confirms that the submission imports and flies; it says nothing about timing.
 
 ## Example controllers
 
