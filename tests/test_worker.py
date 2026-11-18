@@ -114,6 +114,11 @@ def test_evaluate_writes_logs_and_leaderboard(tmp_path):
     board = json.loads((tmp_path / "out" / "leaderboard.json").read_text())
     assert board["seed"] == 7 and board["results"][1]["status"] == "controller_error"
     assert (tmp_path / "out" / "logs" / "hover.json").is_file()
+    log = json.loads((tmp_path / "out" / "logs" / "hover.json").read_text(encoding="utf-8"))
+    assert set(log) == {"schema_version", "config", "scenario", "realization", "provenance", "summary", "events", "samples"}
+    assert log["provenance"]["race"] == {"name": "unit", "team": "hover", "phase": "practice"}
+    assert log["provenance"]["scoring_policy"]["version"] == "aoc-gate-contact-v1"
+    assert log["summary"]["score_s"] is None
 
 
 def test_check_accepts_the_baseline_and_rejects_a_broken_submission(tmp_path):

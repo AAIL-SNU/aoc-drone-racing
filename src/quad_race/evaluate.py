@@ -78,7 +78,7 @@ def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=N
                               isolation="docker" if docker_image else "process")
         if problems:
             log["summary"].update(status="disqualified", completed=False, score_s=None, error="; ".join(problems))
-        log["race"] = {"name": name, "team": team, "phase": phase}
+        log["provenance"]["race"] = {"name": name, "team": team, "phase": phase}
         save_log(log, out_dir / "logs" / f"{team}.json")
         summaries[team], digests[team] = log["summary"], log["provenance"]["submission_sha256"]
         s = log["summary"]

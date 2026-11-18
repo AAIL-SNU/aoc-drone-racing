@@ -79,6 +79,17 @@ J = 전체 완주 시간 + 5 s × 게이트 프레임 접촉 사건 수
 
 ## 7. 최근 회의 결정의 구현 상태
 
+### JSON 결과 파일과 대시보드 연결
+
+- `drone-race run --controller submission --headless --log outputs/my-run.json`으로 점수와 비행 기록을 함께 저장합니다.
+- 비행 로그는 MPC/MPPI 예제와 같은 `schema_version: 2` 형식이며 최상위 항목은 `schema_version`, `config`, `scenario`, `realization`, `provenance`, `summary`, `events`, `samples`의 8개입니다. 세부 형식은 `schema/flight-log-v2.schema.json`에 있습니다.
+- 최신 채점 규칙은 `provenance.scoring_policy`에 저장합니다. 버전은 `aoc-gate-contact-v1`, 접촉 벌점은 5초입니다. `summary.score_s`가 최종 J이며 실격/미완주는 `null`입니다.
+- `evaluate`가 만든 팀별 로그는 `provenance.race`에 팀 이름·대회 이름·예선/결선 구분을 추가합니다. 집계용 `leaderboard.json`은 비행 로그와 다른 형식이며 재생용이 아닙니다.
+- `samples`는 비행 상태, `events`는 게이트 접촉·통과·랩 완료 기록입니다. 시간은 초, JSON의 게이트·랩 번호는 0부터 시작합니다. 대시보드는 같은 파일을 읽어 비행과 점수를 함께 표시하며 제어기를 다시 실행하지 않습니다.
+- 배포·공유할 대시보드는 admin 저장소의 `dashboard/`가 기준입니다. 이전 HTML 사본은 배포 대상이 아닙니다. 이전 정책으로 생성한 로그는 최신 정책의 공식 결과로 변환할 수 없으므로 제어기를 다시 실행해야 합니다.
+
+### 추가 testbed 작업
+
 - 예선은 제출 후 사전 평가하며 약 4명의 상위 완주자를 선발합니다. 결선은 동일한 새 외란 seed를 모든 결선 참가자에게 적용합니다. 예선·결선 순위는 따로 관리합니다.
 - 추력에 비례하여 증가하는 외란, 배터리 잔량에 따른 최대 추력, 계산 완료마다 제어 입력을 갱신하는 방식은 테스트베드 담당자 구현/협의 사항입니다. 현재 코드는 아직 50 Hz 고정이며 입력 한계 밖의 action을 거부합니다.
 - 공식 기기 timing을 측정해 학생에게 제공할 수 있는 로그 항목은 존재합니다. 업로드·피드백 웹서비스는 별도 구현 사항입니다.

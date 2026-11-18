@@ -6,7 +6,8 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   submission:
-    runs-on: ubuntu-latest
+    # The pinned Python 3.12.12 runtime is available on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -15,6 +16,8 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt && pip install --no-deps -e .
+      - name: Validate contact scoring and the flight-log contract
+        run: pytest -q tests/test_scoring.py tests/test_rules.py tests/test_episode.py::test_flight_log_uses_reference_eight_field_contract tests/test_worker.py::test_evaluate_writes_logs_and_leaderboard
       - name: Check the submission folder
         run: drone-race check submission
       - name: One lap of the practice circuit

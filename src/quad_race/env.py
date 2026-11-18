@@ -233,10 +233,10 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, mass
     }
     return {
         "schema_version": SCHEMA_VERSION, "config": {**asdict(config), "track": track_to_dict(config.track)},
-        "scoring_policy": {"version": POLICY_VERSION, "gate_collision_penalty_s": GATE_COLLISION_PENALTY_S},
-        "scenario": asdict(scenario),
+        "scenario": {**asdict(scenario), "max_time_s": scenario.time_limit(config.laps)},
         "realization": {"mass_scale": mass_scale, "wind_phase_rad": phase.tolist()},
         "provenance": {
+            "scoring_policy": {"version": POLICY_VERSION, "gate_collision_penalty_s": GATE_COLLISION_PENALTY_S},
             "simulator_sha256": hashlib.sha256(b"".join(p.name.encode() + p.read_bytes()
                 for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest(),
             "submission_sha256": digest, "submission": sub.entry.name if sub.entry.name != "controller.py" else sub.root.name,
@@ -253,4 +253,4 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, mass
 def save_log(log: dict, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(log, indent=2, allow_nan=False) + "\n")
+    path.write_text(json.dumps(log, indent=2, allow_nan=False) + "\n", encoding="utf-8")

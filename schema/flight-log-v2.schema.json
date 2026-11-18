@@ -1,0 +1,449 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AOC flight log v2 — MPC / MPPI reference format",
+  "description": "Shared structural contract. Additional metadata is allowed for compatibility. Event, timing and score consistency are checked by the dashboard adapter. A shared format does not imply a shared scoring policy.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "config",
+    "scenario",
+    "realization",
+    "provenance",
+    "summary",
+    "events",
+    "samples"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "control_dt_s",
+        "physics_dt_s",
+        "nominal_mass_kg",
+        "gravity_m_s2",
+        "thrust_max_N",
+        "body_rate_limit_rad_s",
+        "body_rate_gain_s_inv",
+        "vehicle_radius_m",
+        "thrust_min_N",
+        "laps",
+        "track"
+      ],
+      "properties": {
+        "control_dt_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "physics_dt_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "nominal_mass_kg": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gravity_m_s2": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "thrust_max_N": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "body_rate_limit_rad_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "body_rate_gain_s_inv": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "vehicle_radius_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "thrust_min_N": {
+          "type": "number",
+          "minimum": 0
+        },
+        "laps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "track": {
+          "type": "object",
+          "required": [
+            "name",
+            "start",
+            "bounds",
+            "gates",
+            "obstacles"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "start": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "bounds": {
+              "$ref": "#/$defs/box"
+            },
+            "obstacles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/box"
+              }
+            },
+            "gates": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "center",
+                  "yaw_rad",
+                  "width_m",
+                  "height_m",
+                  "frame_m"
+                ],
+                "properties": {
+                  "center": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "yaw_rad": {
+                    "type": "number"
+                  },
+                  "width_m": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "height_m": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "frame_m": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "seed",
+        "max_time_s"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer"
+        },
+        "max_time_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gate_miss_penalty_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "infraction_penalty_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "failure_penalty_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "realization": {
+      "type": "object"
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "status",
+        "completed",
+        "flight_time_s",
+        "score_s",
+        "penalty_s",
+        "laps_total",
+        "laps_completed",
+        "lap_times_s",
+        "fastest_lap_s",
+        "gates_total",
+        "gates_resolved",
+        "gates_passed",
+        "gates_missed",
+        "infractions"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "flight_time_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "score_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "penalty_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "failure_penalty_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "laps_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "laps_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lap_times_s": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "fastest_lap_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "gates_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gates_resolved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gates_passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gates_missed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gate_collisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "infractions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "time_s",
+          "gate",
+          "lap"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "time_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "gate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "lap": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "event_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "time_s",
+          "position_m",
+          "velocity_m_s",
+          "quaternion_xyzw",
+          "body_rates_rad_s",
+          "wind_m_s",
+          "lap",
+          "next_gate",
+          "late",
+          "act_s",
+          "action"
+        ],
+        "properties": {
+          "time_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "position_m": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "velocity_m_s": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "quaternion_xyzw": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "body_rates_rad_s": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "wind_m_s": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "lap": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_gate": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "late": {
+            "type": "boolean"
+          },
+          "act_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "thrust_N",
+                  "body_rates_rad_s"
+                ],
+                "properties": {
+                  "thrust_N": {
+                    "type": "number"
+                  },
+                  "body_rates_rad_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "box": {
+      "type": "object",
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "lower": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "upper": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    }
+  }
+}

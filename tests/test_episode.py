@@ -90,6 +90,23 @@ def test_log_roundtrip_and_replay_does_not_change_log(nominal, tmp_path):
     assert output.stat().st_size > 1000
 
 
+def test_flight_log_uses_reference_eight_field_contract(nominal):
+    assert set(nominal) == {
+        "schema_version", "config", "scenario", "realization",
+        "provenance", "summary", "events", "samples",
+    }
+    assert nominal["schema_version"] == 2
+    assert nominal["scenario"]["max_time_s"] == 45.0
+    assert nominal["provenance"]["scoring_policy"] == {
+        "version": "aoc-gate-contact-v1", "gate_collision_penalty_s": 5.0,
+    }
+    assert nominal["samples"][0]["action"] is None
+    assert nominal["samples"][0]["act_s"] is None
+    assert nominal["samples"][0]["lap"] == 0
+    s = nominal["summary"]
+    assert s["score_s"] == pytest.approx(s["flight_time_s"] + 5 * s["gate_collisions"])
+
+
 def test_small_wind_and_mass_error_reproducible_and_completes():
     scenario = Scenario(seed=17, wind_max_m_s=0.5, mass_error_fraction=0.05)
     a, b = run_episode(BASELINE, CONFIG, scenario), run_episode(BASELINE, CONFIG, scenario)
