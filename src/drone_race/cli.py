@@ -99,7 +99,6 @@ def main():
     bench.add_argument("--controller", default="submission")
     bench.add_argument("--race", default=DEFAULT_RACE)
     bench.add_argument("--seconds", type=float, default=10.0, help="Simulated seconds of your controller to time")
-    bench.add_argument("--write-reference", action="store_true", help="TAs: store this machine as the official one")
 
     play = sub.add_parser("replay", help="Visualize a saved log without simulation")
     play.add_argument("log")
@@ -167,7 +166,7 @@ def main():
         sys.exit(0 if run_check(args.controller, args.race if Path(args.race).exists() else None) else 1)
     if args.command == "bench":
         from .bench import bench as run_bench
-        run_bench(args.controller, args.race, seconds=args.seconds, write_reference=args.write_reference)
+        run_bench(args.controller, args.race, seconds=args.seconds)
         return
     name, config, scenario = _race(args)
     submission_name = Path(args.controller).resolve()

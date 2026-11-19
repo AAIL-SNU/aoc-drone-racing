@@ -113,8 +113,15 @@ def hard_reset_timeout(budget_s: float) -> float:
 
 
 def hard_act_timeout(budget_s: float) -> float:
-    """act() calls this slow are not late but hung: the worker is killed and the run ends."""
-    return max(0.5, 25 * budget_s)
+    """act() calls this slow are not late but hung: the worker is killed and the run ends.
+
+    This one limit is wall-clock, unlike the budget itself, so it is the only
+    place where a loaded scoring machine can touch a result. Scoring runs one
+    evaluation per physical core, and a controller that is merely descheduled
+    gets its CPU back long before this; the floor is high enough that reaching
+    it means the call is not slow but stuck.
+    """
+    return max(5.0, 25 * budget_s)
 
 
 def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(), observer=None, *,
