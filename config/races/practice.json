@@ -1,6 +1,6 @@
 {
   "name": "practice",
-  "track": "../tracks/circuit_3.json",
+  "track": "../tracks/trefoil_1.json",
   "laps": 5,
   "scenario": {
     "seed": 0,

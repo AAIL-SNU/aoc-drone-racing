@@ -1,6 +1,6 @@
 {
   "name": "competition",
-  "track": "../tracks/circuit_1.json",
+  "track": "../tracks/eight_1.json",
   "laps": 5,
   "scenario": {
     "seed": 0,
