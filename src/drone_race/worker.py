@@ -1,7 +1,7 @@
 """Run a submission in its own process and talk to it over JSON lines.
 
-Host side: ``WorkerController`` starts ``python -m drone_race.worker`` (optionally
-inside ``docker run ...``) and exchanges one message per reset()/act() call.
+Host side: ``WorkerController`` starts ``python -m drone_race.worker`` and exchanges
+one message per reset()/act() call.
 ``InlineController`` loads the submission into the simulator's own process instead;
 it exists for debugging (breakpoints, print-heavy work) and does not enforce timing.
 
@@ -53,15 +53,9 @@ def _describe(exc: BaseException) -> str:
 class WorkerController:
     enforces_timing = True
 
-    def __init__(self, submission, *, command_prefix=None, mount_root=None, cpu=None, stderr=None):
-        """``command_prefix`` (e.g. a ``docker run ...`` list) runs the worker elsewhere;
-        ``mount_root`` is where the submission folder appears inside that environment."""
-        root = Path(mount_root) if mount_root else submission.root
-        entry = root / submission.entry.relative_to(submission.root)
-        if command_prefix:
-            command = [*command_prefix, "python", "-m", "drone_race.worker", entry.as_posix(), root.as_posix()]
-        else:
-            command = [sys.executable, "-m", "drone_race.worker", str(entry), str(root)]
+    def __init__(self, submission, *, cpu=None, stderr=None):
+        command = [sys.executable, "-m", "drone_race.worker",
+                   str(submission.entry), str(submission.root)]
         env = {**os.environ, **THREAD_ENV}
         if cpu is not None:
             env["DRONE_RACE_CPU"] = str(cpu)

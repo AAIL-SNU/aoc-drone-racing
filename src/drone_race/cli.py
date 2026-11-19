@@ -108,7 +108,6 @@ def main():
     ev.add_argument("--laps", type=int, default=None)
     ev.add_argument("--out", default="outputs/evaluation")
     ev.add_argument("--cpu", type=int, default=None, help="Pin each controller to this CPU core (Linux)")
-    ev.add_argument("--docker", default=None, metavar="IMAGE", help="Run each controller in this Docker image")
     ev.add_argument("--teams", nargs="+", default=None, help="Only these team folders")
 
     play = sub.add_parser("replay", help="Visualize a saved log without simulation")
@@ -182,7 +181,7 @@ def main():
     if args.command == "evaluate":
         from .evaluate import evaluate
         rows = evaluate(args.submissions, args.race, args.out, seed=args.seed, laps=args.laps, cpu=args.cpu,
-                        docker_image=args.docker, teams=args.teams)
+                        teams=args.teams)
         print(f"\n{'rank':>4}  {'team':<20} {'status':<18} {'score [s]':>10} {'laps':>6} {'fastest':>8}")
         for row in rows:
             score = f"{row['score_s']:.2f}" if row["score_s"] is not None else "-"

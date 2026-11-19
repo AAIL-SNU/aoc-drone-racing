@@ -15,7 +15,6 @@ import re
 from .env import run_episode, save_log
 from .race import load_race
 from . import submission as submissions
-from .worker import THREAD_ENV
 
 
 def rank(summaries: dict[str, dict]) -> list[dict]:
@@ -37,25 +36,14 @@ def rank(summaries: dict[str, dict]) -> list[dict]:
     return rows
 
 
-def docker_prefix(image: str, team_dir: Path, cpu=None, memory="4g") -> list[str]:
-    command = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only", "--tmpfs", "/tmp",
-               "--cpus", "1", "--memory", memory, "--memory-swap", memory, "--pids-limit", "256"]
-    if cpu is not None:
-        command += ["--cpuset-cpus", str(cpu)]
-    for key, value in THREAD_ENV.items():
-        command += ["-e", f"{key}={value}"]
-    return command + ["-v", f"{team_dir.resolve()}:/submission:ro", image]
-
-
-def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=None, docker_image=None,
+def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=None,
              teams=None, progress=print) -> list[dict]:
     submissions_dir, out_dir = Path(submissions_dir), Path(out_dir)
     name, config, scenario = load_race(race_path, laps=laps, seed=seed)
     team_dirs = sorted(p for p in submissions_dir.iterdir() if p.is_dir() and (p / submissions.ENTRY).is_file())
     if teams:
         team_dirs = [p for p in team_dirs if p.name in set(teams)]
-    if not docker_image:
-        progress("warning: running without --docker; submissions are isolated by process only (not a sandbox)")
+    progress("note: submissions are isolated by process only; sandbox the host itself")
     (out_dir / "logs").mkdir(parents=True, exist_ok=True)
     (out_dir / "stderr").mkdir(parents=True, exist_ok=True)
     summaries, digests = {}, {}
@@ -65,10 +53,7 @@ def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=N
         progress(f"[{team}] running {name} ({config.laps} laps, seed {scenario.seed})"
                  + (f" -- {'; '.join(problems)}" if problems else ""))
         with open(out_dir / "stderr" / f"{team}.txt", "w") as stderr:
-            log = run_episode(team_dir, config, scenario, cpu=None if docker_image else cpu, stderr=stderr,
-                              command_prefix=docker_prefix(docker_image, team_dir, cpu) if docker_image else None,
-                              mount_root="/submission" if docker_image else None,
-                              isolation="docker" if docker_image else "process")
+            log = run_episode(team_dir, config, scenario, cpu=cpu, stderr=stderr)
         if problems:
             log["summary"].update(status="disqualified", completed=False, error="; ".join(problems))
         log["race"] = {"name": name, "team": team}
