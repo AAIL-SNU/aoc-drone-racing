@@ -113,26 +113,47 @@ def _draw_profile(ax, track: Track, points: np.ndarray):
     ax.grid(True, color="#e3e7ea", linewidth=0.6)
 
 
-def plot_track(track: Track):
-    """Figure of a track: top view with pass directions, 3D view and altitude profile."""
+WIND_COLOR = "#2b7bb9"
+
+
+def _draw_wind_top(ax, wind_zones):
+    """Wind zones as translucent boxes: an arrow for horizontal wind, a cross for downwash."""
+    for zone in wind_zones:
+        lo, hi = np.array(zone.lower), np.array(zone.upper)
+        ax.add_patch(Rectangle(lo[:2], *(hi - lo)[:2], color=WIND_COLOR, alpha=0.12, zorder=0))
+        center, direction = (lo[:2] + hi[:2]) / 2, np.asarray(zone.direction, dtype=float)
+        horizontal = direction[:2] / max(np.linalg.norm(direction), 1e-9)
+        if np.linalg.norm(horizontal) > 0.3:
+            ax.annotate("", xy=center + 1.5 * horizontal, xytext=center - 1.5 * horizontal, zorder=1,
+                        arrowprops=dict(arrowstyle="-|>", color=WIND_COLOR, lw=2))
+        else:
+            ax.plot(*center, marker="x" if direction[2] < 0 else "o", color=WIND_COLOR, markersize=10, mew=2, zorder=1)
+        ax.text(center[0], hi[1] - 0.3, f"{zone.name}\n{zone.speed_m_s[0]:g}-{zone.speed_m_s[1]:g} m/s",
+                ha="center", va="top", fontsize=7, color=WIND_COLOR, zorder=1)
+
+
+def plot_track(track: Track, wind_zones=()):
+    """Figure of a track: top view with pass directions (and wind zones), 3D view and altitude profile."""
     points = _course_points(track)
     norm = plt.Normalize(track.bounds.lower[2], track.bounds.upper[2])
     figure = plt.figure(figsize=(15, 9.5))
     grid = figure.add_gridspec(2, 2, width_ratios=(1.2, 1), height_ratios=(1.5, 1), wspace=0.12, hspace=0.28)
     top = figure.add_subplot(grid[0, 0])
     path = _draw_top(top, track, points, norm)
+    _draw_wind_top(top, wind_zones)
     figure.colorbar(path, ax=top, shrink=0.8, pad=0.02, label="leg altitude z [m]")
     _draw_3d(figure.add_subplot(grid[0, 1], projection="3d"), track, points, norm)
     _draw_profile(figure.add_subplot(grid[1, :]), track, points)
-    figure.suptitle(f"{track.name}: {len(track.gates)} gates, {len(track.obstacles)} obstacle(s)",
+    wind = f", {len(wind_zones)} wind zone(s) (blue; x = downwash)" if wind_zones else ""
+    figure.suptitle(f"{track.name}: {len(track.gates)} gates, {len(track.obstacles)} obstacle(s){wind}",
                     fontsize=15, y=0.97)
     return figure
 
 
-def save_track_plot(track: Track, output: str | Path) -> Path:
+def save_track_plot(track: Track, output: str | Path, wind_zones=()) -> Path:
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    figure = plot_track(track)
+    figure = plot_track(track, wind_zones)
     figure.savefig(output, dpi=120, bbox_inches="tight")
     plt.close(figure)
     return output

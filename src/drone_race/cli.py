@@ -7,7 +7,7 @@ from .env import Scenario, run_episode, save_log
 from .track import load_track, random_track, save_track
 
 
-DEFAULT_RACE = "config/races/competition.json"
+DEFAULT_RACE = "config/race.json"
 
 
 def _race_args(parser):
@@ -18,6 +18,8 @@ def _race_args(parser):
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--turbulence", type=float, default=None, help="Horizontal turbulence std [0,2] m/s")
     parser.add_argument("--calm", action="store_true", help="No wind zones and no turbulence")
+    parser.add_argument("--fixed", action="store_true",
+                        help="Ignore the race file's randomize section: unperturbed track, the file's own wind zones")
     parser.add_argument("--max-time", type=float, default=None, help="Simulated time limit [s]")
 
 
@@ -32,7 +34,7 @@ def _race(args):
         race = Path(args.race)
         if not race.exists() and args.race == DEFAULT_RACE and find_repo_file(DEFAULT_RACE):
             race = find_repo_file(DEFAULT_RACE)
-        name, config, scenario = load_race(race, laps=args.laps, seed=args.seed)
+        name, config, scenario = load_race(race, laps=args.laps, seed=args.seed, randomized=not args.fixed)
     overrides = {key: value for key, value in (("turbulence_m_s", args.turbulence), ("max_time_s", args.max_time))
                  if value is not None}
     if args.calm:
@@ -119,9 +121,13 @@ def main():
     make.add_argument("--seed", type=int, default=0)
     make.add_argument("--no-plot", action="store_true", help="Do not write the PNG picture next to the track")
     plot = sub.add_parser("plot-track", help="Draw track files as PNGs: top view, 3D view, altitude profile")
-    plot.add_argument("tracks", nargs="+", help="Track JSON file(s)")
+    plot.add_argument("tracks", nargs="*", help="Track JSON file(s)")
+    plot.add_argument("--race", default=None,
+                      help="Instead of tracks: draw the track and wind zones a race file gives for --seed")
+    plot.add_argument("--seed", type=int, default=None, help="With --race: the race seed (default: the file's)")
+    plot.add_argument("--fixed", action="store_true", help="With --race: ignore its randomize section")
     plot.add_argument("--output", default=None,
-                      help="PNG path (one track only; default: next to each track, same name, .png)")
+                      help="PNG path (one track only; default: next to each track, or outputs/<track>.png for --race)")
     args = parser.parse_args()
 
     if args.command in ("make-track", "plot-track"):
@@ -136,6 +142,14 @@ def main():
             print(f"Plot:  {save_track_plot(track, Path(args.output).with_suffix('.png')).resolve()}")
         return
     if args.command == "plot-track":
+        if args.race:
+            from .race import load_race
+            _, config, scenario = load_race(args.race, seed=args.seed, randomized=not args.fixed)
+            output = args.output or Path("outputs") / f"{config.track.name}.png"
+            print(f"Plot: {save_track_plot(config.track, output, scenario.wind_zones).resolve()}")
+            return
+        if not args.tracks:
+            parser.error("give track file(s) or --race")
         if args.output and len(args.tracks) > 1:
             parser.error("--output needs exactly one track")
         for path in args.tracks:

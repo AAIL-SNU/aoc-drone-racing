@@ -12,9 +12,10 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 | Path | What it is | Do you edit it? |
 |---|---|---|
 | `submission/` | **Your controller.** The only folder that is collected and scored | **Yes** |
-| `examples/` | Example PD, MPC and MPPI controllers to start from, and a benchmark script | Copy from it |
-| `config/tracks/` | Track files, named `<shape>_<version>.json`: `eight_1.json` is the competition circuit; `twisted_eight_1`, `inner_loop_1` (practice race), `trefoil_1` and `coaster_1` are alternative layouts. Each `.png` beside a track is its picture (top view, 3D view, altitude profile) | No |
-| `config/races/` | Race files (track + laps + disturbance); `competition.json` is the default | No |
+| `examples/` | A slow PD example controller to start from | Copy from it |
+| `config/tracks/` | The five shipped tracks, named `<shape>.json` (with `"name": "<shape>_track"` inside): `eight`, `twisted_eight`, `inner_loop`, `trefoil`, `coaster`. The official circuit is one of them with its gates moved at random (COMPETITION.md Section 3). Each `.png` beside a track is its picture (top view, 3D view, altitude profile) | No |
+| `config/race.json` | The default race (track + laps + disturbance) that `drone-race run` flies. Edit it to experiment; `git checkout config/race.json` restores it | Yes, to experiment |
+| `config/server_evaluation_race.json` | The race the shared practice server flies every upload on. Run it locally with `--race` to reproduce a server result | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
 
@@ -69,7 +70,7 @@ The types are defined in `src/drone_race/api.py`:
 
 All quantities are SI; the world frame is z-up. The meaning of each value, the limits and what happens when they are exceeded are in [COMPETITION.md](COMPETITION.md). The docstring at the top of `submission/controller.py` summarizes the same interface.
 
-The shipped `submission/controller.py` is a template that only holds its start position. Replace its `reset()` and `act()`, or start from one of the controllers in `examples/`.
+The shipped `submission/controller.py` is a template that only holds its start position. Replace its `reset()` and `act()`, or start from the PD example in `examples/`.
 
 How the controller is run:
 
@@ -84,57 +85,65 @@ These ship with the package and may be imported from a submission, or ignored:
 
 | Module | What it offers |
 |---|---|
-| `drone_race.planning` | `QuadModel` (batched discrete-time model of the plant through the action interface: rate loop, rotor drag, parasitic drag, translational lift), `RacingLine` (smooth path through the gate centers with a speed profile), `DisturbanceObserver`, quaternion utilities |
 | `drone_race.battery` | The exact battery equations the simulator uses: `terminal_voltage`, `thrust_limit`, `current`, `BatteryModel.step`, ... |
 | `drone_race.helpers` | `track_position`: a PD position tracker (optional velocity feedforward `target_velocity`, gains `kp`/`kd`, `max_accel`) that returns an `Action` |
 | `drone_race.rules` | The referee's gate geometry: `gate_local`, `inside_opening`, `frame_boxes`, ... |
+| `drone_race.randomize` | How races are randomized: `perturb_track` (moved gates), `random_wind_zones`, `threads_gates` (the acceptance check) |
 | `drone_race.trackplot` | `plot_track(track)` returns a matplotlib figure (top view with pass directions, 3D view, altitude profile); `save_track_plot(track, path)` writes it as a PNG |
 
 ## Running
 
 ```bash
-drone-race run                          # submission/ on the practice race, then a playback window
+drone-race run                          # submission/ on config/race.json, then a playback window
 drone-race run --laps 1                 # just one lap
 drone-race run --headless               # no window: print the result only
-drone-race run --seed 5                 # another draw of the practice disturbance
+drone-race run --seed 5                 # another random circuit and wind (moved gates, new wind zones)
+drone-race run --fixed                  # the unmoved track, no wind zones (turbulence only)
 drone-race run --calm                   # no wind zones and no turbulence
 drone-race run --turbulence 1.0         # stronger turbulence (std in m/s, 0 to 2)
 drone-race run --debug                  # controller inside this process: breakpoints/pdb work, timing not enforced
 
-drone-race run --controller examples/mpc_controller.py --laps 2   # any controller folder or .py file
-drone-race run --track config/tracks/eight_1.json              # any track: 1 lap, no disturbance
+drone-race run --controller examples/pd_controller.py --laps 2    # any controller folder or .py file
+drone-race run --track config/tracks/eight.json              # any track: 1 lap, no disturbance
 drone-race run --race path/to/race.json                          # any race file
 
-drone-race replay outputs/submission_competition.json                # watch a saved run again
-drone-race replay outputs/submission_competition.json --output outputs/replay.gif
+drone-race replay outputs/submission_practice.json                # watch a saved run again
+drone-race replay outputs/submission_practice.json --output outputs/replay.gif
 drone-race make-track outputs/random.json --gates 10 --seed 3     # a seeded random track for testing (+ outputs/random.png)
-drone-race plot-track config/tracks/twisted_eight_1.json               # picture of a track -> config/tracks/twisted_eight_1.png
+drone-race plot-track config/tracks/twisted_eight.json               # picture of a track -> config/tracks/twisted_eight.png
+drone-race plot-track --race config/race.json --seed 5   # the circuit and wind zones of seed 5 -> outputs/<track>-seed5.png
 ```
 
 `run` simulates the whole race first, printing each lap as it completes, and only then opens the window, which plays the flight back at real time (`--speed 2` for double speed). Drawing therefore never slows the controller down. The window shows the course with the flight path, a chase view of the vehicle, roll/pitch/yaw over time, and the battery's remaining charge [%] and terminal voltage over time. The terminal shows the status, score, lap times, gate collisions, `act()` timing, peak tilt and battery use.
 
 ### Race files
 
-The default race is `config/races/competition.json`. A race file bundles a track, the number of laps and the disturbance:
+The default race is `config/race.json`. A race file bundles a track, the number of laps, the randomization and the disturbance:
 
 ```json
 {
-  "name": "competition",
-  "track": "../tracks/eight_1.json",
+  "name": "practice",
+  "track": "tracks/eight.json",
   "laps": 5,
+  "randomize": {"gate_shift_m": 1.0, "gate_height_m": 0.5, "gate_yaw_deg": 15.0, "wind": true},
   "scenario": {
     "seed": 0,
     "turbulence_m_s": 0.6,
-    "wind_zones": [
-      {"name": "east crosswind", "lower": [12, -3, 0], "upper": [20, 5, 6],
-       "direction": [1, 0, 0], "speed_m_s": [1.5, 3.0], "heading_jitter_deg": 30, "ramp_m": 1.5}
-    ],
     "max_time_s": 900.0
   }
 }
 ```
 
-`track` is relative to the race file. The scenario fields are defined by `Scenario` in `src/drone_race/env.py` and `WindZone` in `src/drone_race/wind.py`. `--laps`, `--seed`, `--turbulence`, `--calm` and `--max-time` override the file. To test robustness, write your own race files (other seeds, stronger zones) and run them with `--race`.
+`randomize` moves every gate of the track a little and places three random wind zones on the course, both drawn from the seed, exactly as the official race does (COMPETITION.md Sections 3 and 5; code in `src/drone_race/randomize.py`). So `--seed N` gives a new circuit and wind each time, while the same seed always gives the same one. `--fixed` ignores `randomize`: the unmoved track and the file's own `wind_zones` (none here). Without `randomize`, a race uses its track as is and the `wind_zones` it lists, for example:
+
+```json
+"wind_zones": [{"name": "east crosswind", "lower": [12, -3, 0], "upper": [20, 5, 6],
+                "direction": [1, 0, 0], "speed_m_s": [1.5, 3.0], "heading_jitter_deg": 30, "ramp_m": 1.5}]
+```
+
+`track` is relative to the race file. The scenario fields are defined by `Scenario` in `src/drone_race/env.py` and `WindZone` in `src/drone_race/wind.py`. `--laps`, `--seed`, `--turbulence`, `--calm` and `--max-time` override the file. To experiment, edit `config/race.json` (another of the five tracks, larger moves, stronger turbulence) or keep variants as separate files and pass them with `--race`. The laps, turbulence and randomization amounts in the shipped file match the official race.
+
+The shared practice server does not read your `config/race.json`: it flies every upload on `config/server_evaluation_race.json`. To reproduce a server result locally, run `drone-race run --race config/server_evaluation_race.json`.
 
 ### Logs
 
@@ -153,7 +162,7 @@ Every run is saved as JSON in `outputs/` (`outputs/<submission>_<race>.json` unl
 drone-race bench
 ```
 
-`bench` times the two example controllers, compares them with the same measurement made on the scoring server, and saves the speed ratio to `outputs/calibration.json`. From then on `drone-race run` scales the 20 ms budget to this computer (e.g. 14 ms on a computer that is faster than the server), so a call that would be late on the server is also late locally. `run` prints which budget it used. `bench` also estimates your own controller's `act()` time on the server; keep about 30 % margin at p99. Use `--budget-scale` on `run` to override the calibration.
+`bench` times three fixed workloads (controllers in `src/drone_race/bench_workloads/` that hover and do a fixed amount of NumPy, SciPy and plain-Python work per `act()`), compares them with the same measurement made on the scoring server, and saves the speed ratio to `outputs/calibration.json`. From then on `drone-race run` scales the 20 ms budget to this computer (e.g. 14 ms on a computer that is faster than the server), so a call that would be late on the server is also late locally. `run` prints which budget it used. `bench` also estimates your own controller's `act()` time on the server; keep about 30 % margin at p99. Use `--budget-scale` on `run` to override the calibration.
 
 ## Checking a submission
 
@@ -161,29 +170,15 @@ drone-race bench
 drone-race check                # layout, size, packages and a short flight: must end with "OK"
 ```
 
-## Example controllers
+## Example controller
 
-Three example controllers live in `examples/`. Each is a complete single-file submission: copy it to `submission/controller.py`, or pass it with `--controller`.
+`examples/pd_controller.py` is a complete single-file submission: copy it to `submission/controller.py`, or pass it with `--controller`. It is a deliberately slow gate-following baseline: pure pursuit along the next gate's axis at a fixed 2.5 m/s, with the `track_position` PD loop from `drone_race.helpers`. It finishes reliably but makes no attempt at speed, and is the simplest place to see the interface working.
 
-- `examples/pd_controller.py`: a deliberately slow gate-following baseline. Pure pursuit along the next gate's axis at a fixed 2.5 m/s, with the `track_position` PD loop from `drone_race.helpers`. It finishes reliably but makes no attempt at speed, and is the simplest place to see the interface working.
-
-The two racers below are much faster:
-
-- `examples/mpc_controller.py`: nonlinear MPC solved with iLQR (Gauss–Newton DDP) over a 1 s horizon. Input bounds are built into the model through tanh squashing. A smooth "gate funnel" cost keeps the drone centered near upcoming gates.
-- `examples/mppi_controller.py`: MPPI with sampled rollouts evaluated in parallel. Crossing a gate plane outside its opening or leaving the bounds is a hard penalty in the cost.
-
-Both compensate the one-step actuation delay by predicting one step ahead with the command already in flight, and both pace themselves to the battery: as the charge drops they switch to a slower speed profile on the same path. Neither is tuned to finish every seed.
-
-Both use `drone_race.planning` for a racing line through the gate centers (repeated for every lap) with a speed profile, a batched quadrotor model and a disturbance observer. `LINE` at the top of each file sets how aggressive the racing line is, and is the main lap-time knob. Both sit close to the 20 ms budget on a typical laptop.
-
-`examples/benchmark.py` compares controllers over several seeds:
+Going faster is the assignment: the planner, the prediction model and the controller are yours to write. `drone_race.battery` and `drone_race.rules` give the exact battery and gate formulas the simulator uses, and COMPETITION.md Section 4 describes the vehicle model. To compare versions over several disturbance draws, run them with different seeds:
 
 ```bash
-python examples/benchmark.py --laps 1 --seeds 1 2 3
-python examples/benchmark.py --laps 5 --controllers mpc mppi --seeds 1 2 3 4 5
+for seed in 1 2 3 4 5; do drone-race run --headless --seed $seed; done
 ```
-
-Episodes run one after another by default, so the timing columns are meaningful; `--jobs N` runs them in parallel but inflates the timings.
 
 ## References
 
