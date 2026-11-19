@@ -9,14 +9,8 @@ description = "A small, reproducible controller-submission racing prototype powe
 requires-python = ">=3.12,<3.13"
 dependencies = ["rotorpy==3.0.0", "numpy>=1.26", "scipy>=1.12", "matplotlib>=3.8", "pillow>=10"]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
-
 [project.scripts]
 drone-race = "drone_race.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/drone_race"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

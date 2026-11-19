@@ -16,7 +16,6 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 | `config/tracks/` | Track files: `circuit.json`, the competition circuit | No |
 | `config/races/` | Race files (track + laps + disturbance); `competition.json` is the default | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
-| `tests/` | Tests of the simulator itself | No |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
 
 ## Installation
@@ -33,7 +32,7 @@ Alternatively, with Python 3.12 and venv:
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
 ```
 
@@ -179,12 +178,6 @@ python examples/benchmark.py --laps 5 --controllers mpc mppi --seeds 1 2 3 4 5
 ```
 
 Episodes run one after another by default, so the timing columns are meaningful; `--jobs N` runs them in parallel but inflates the timings.
-
-## Running the simulator tests
-
-```bash
-pytest
-```
 
 ## References
 
