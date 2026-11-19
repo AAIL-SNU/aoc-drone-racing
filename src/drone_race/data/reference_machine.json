@@ -1,17 +1,18 @@
 {
   "placeholder": true,
-  "measured": "2026-11-16",
+  "measured": "2026-11-19",
   "machine": {
     "platform": "macOS-27.2-arm64-arm-64bit",
     "processor": "arm",
     "python": "3.12.12",
     "cpus": 11
   },
-  "track": "aoc-eight-v1",
+  "track": "eight_track",
   "seconds": 4.0,
   "median_act_s": {
-    "mpc": 0.016097999999999946,
-    "mppi": 0.015134999999999899
+    "numpy_rollout": 0.005848000000000075,
+    "scipy_linalg": 0.004614999999999814,
+    "python_loop": 0.004682999999999993
   },
   "note": "Measured on a development laptop. Replace by running `drone-race bench --write-reference` on the scoring server."
 }

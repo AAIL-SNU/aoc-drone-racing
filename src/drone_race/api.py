@@ -51,7 +51,7 @@ class PublicConfig:
     act_budget_s: float = 0.02     # compute budget per act() call on the official machine
     reset_budget_s: float = 60.0   # compute budget for reset() on the official machine
     # Battery (drone_race.battery): P = battery_power_coeff * T^1.5, V = V_oc(soc) - R I, T_max ~ V^2.
-    battery_capacity_mAh: float = 500.0        # 5 full-attack laps leave ~70% and cost ~1 s; hovering lasts ~8 min
+    battery_capacity_mAh: float = 200.0        # 5 fast laps leave ~40-60% (reference MPC); hovering lasts ~3.3 min
     battery_voltage_full_V: float = 12.6       # 3S LiPo, 4.2 V per cell
     battery_voltage_empty_V: float = 9.9       # 3.3 V per cell at soc = 0
     battery_resistance_ohm: float = 0.05       # pack internal resistance (voltage sag under load)

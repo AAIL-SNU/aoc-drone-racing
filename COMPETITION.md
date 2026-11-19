@@ -1,17 +1,17 @@
 # Competition Rule
 
-> **Draft.** Rules may change before the competition. When they do, this document and `config/races/` are updated together. Items marked **TBD** are not final yet.
+> **Draft.** Rules may change before the competition. When they do, this document, `config/race.json` and `config/server_evaluation_race.json` are updated together. Items marked **TBD** are not final yet.
 
 This document is the rulebook: the race, the vehicle, the disturbances, the constraints, the compute limits and the scoring. How to install, run and test the code is in [README.md](README.md).
 
 ## 1. Overview
 
-- Each participant writes a controller that flies a quadrotor around a fixed circuit **as fast as possible**, while wind pushes the drone around.
+- Each student writes a controller that flies a quadrotor around a circuit **as fast as possible**, while wind pushes the drone around. The exact circuit and wind are drawn at random and seen only by the controller (Section 3, Section 5).
 - The aim is to implement and practice the optimal control methods covered in Applied Optimal Control (M2795.007200).
 
 ## 2. Schedule and procedure
 
-1. The repository is released two weeks before the competition. Each participant clones it and implements a controller.
+1. The repository is released two weeks before the competition. Each participant clones it and implements a controller. Until the deadline, controllers uploaded to the shared practice server are flown on `config/server_evaluation_race.json` (a practice race drawn the same way as the official one, but on a known track and seed).
 2. Submissions (the `submission/` folder) are due through GitHub (or eTL) on the night two days before the competition.
 3. The TAs run every submission on the official Linux server, all on **the same circuit with the same disturbance**, and record times and scores.
 4. A video is rendered from each participant's flight trajectory.
@@ -23,14 +23,24 @@ This document is the rulebook: the race, the vehicle, the disturbances, the cons
 
 | Item | Rule |
 |---|---|
-| Circuit | `config/tracks/eight_1.json` (`aoc-eight-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. Picture: `config/tracks/eight_1.png`. |
-| Arena | The vehicle must stay inside the box x ∈ [−20, 20] m, y ∈ [−10, 10] m, z ∈ [0, 6] m (`track.bounds`). The ground is the bottom face of this box. |
-| Laps | **5 laps.** One lap passes gates 0 → 9 in order; gate 9 is the start/finish line. |
-| Start | At rest, hovering at `track.start` = (−1.6, −1.6, 1.5) m, just past gate 9, at simulated time t = 0. |
+| Circuit | **One of the five shipped tracks** in `config/tracks/` (`eight`, `twisted_eight`, `inner_loop`, `trefoil`, `coaster`; a picture of each is next to it), with **every gate moved at random** (below). Which track it is, and where its gates are, reach the controller only through `config.track` in `reset()`. No obstacles. |
+| Arena | The track's `track.bounds`: a box whose bottom face is the ground. Each shipped track has its own; the largest is 40 × 20 × 6 m (`eight`). The vehicle must stay inside it. |
+| Laps | **5 laps.** One lap passes every gate in order (10 gates, 12 on `trefoil`); the last gate is the start/finish line. |
+| Start | At rest, hovering at `track.start`, just behind the last gate, at simulated time t = 0. |
 | Time limit | Set by the official race file. If the file sets none, 45 s per lap (225 s for 5 laps). |
 | Gates | Each gate has a 2 m × 2 m square opening framed by 0.1 m bars. It is passed along its local +x axis, (cos yaw, sin yaw, 0). |
 
 Coordinates are SI, world frame right-handed with z up, gravity (0, 0, −9.81) m/s².
+
+**Gate randomization.** Starting from the shipped track, each gate independently
+
+- moves horizontally to a uniform random point within **1.0 m** of its original center,
+- moves vertically by a uniform amount within **±0.5 m**,
+- turns about the vertical axis by a uniform angle within **±15°**.
+
+The start moves with the last gate. A draw is discarded and drawn again if two gate centers end up closer than 3 m, if a gate opening comes within 0.3 m of the arena's walls, floor or ceiling, or if the smooth reference path does not thread every gate cleanly (a cubic curve through the gate centers, crossing each gate along its axis, flown by the 0.28 m collision sphere; `drone_race.randomize.threads_gates`). The amounts are the `randomize` section of `config/race.json`.
+
+A trajectory optimized in advance for the unperturbed track will clip gate frames on the moved gates. Plan, or re-plan from a precomputed starting point, on `config.track` in `reset()`, which may use up to 60 s (Section 7).
 
 ## 4. Vehicle and dynamics
 
@@ -55,23 +65,24 @@ The plant is [RotorPy](https://github.com/spencerfolk/rotorpy)'s AscTec Hummingb
 - Each action is held (zero-order hold) until the next one takes effect: one control step normally, longer after a late `act()` call (Section 7).
 - There is a **one-step actuation delay**: the action computed from the observation at time t_k is applied from t_k + 20 ms to t_k + 40 ms. Until the first action takes effect, the drone flies hover thrust (4.905 N) with zero body rates.
 
-`drone_race.planning.QuadModel` reproduces this model for use inside a controller.
+Building a prediction model of this vehicle is part of the task. The aerodynamic coefficients are RotorPy's Hummingbird parameters (`rotorpy.vehicles.hummingbird_params`).
 
 ## 5. Disturbances
 
 The wind is an air velocity in the world frame. It acts on the drone only through the aerodynamic terms above, which use the airspeed v − wind. It has two parts:
 
-**Wind zones (layout public, strength random).** Boxes on the course, each with a nominal wind direction. For one race the seed draws each zone's speed uniformly from its `speed_m_s` range, and turns its direction about the vertical axis by a uniform angle within ±`heading_jitter_deg`. The zone wind is then constant in time, identical on every lap, and fades smoothly to zero within `ramp_m` outside the box. The practice race (`config/races/competition.json`) has three zones:
+**Wind zones (random layout, random strength).** Exactly **three** boxes, each spanning the full arena height and placed at random on the course: its center is a uniform random point of the lap (the closed path through the gate centers), and the three centers are at least 8 m apart horizontally. Boxes are cut at the arena walls.
 
-| Zone | Box (lower → upper) [m] | Direction | Speed [m/s] | Heading jitter |
-|---|---|---|---|---|
-| east crosswind | (12, −3, 0) → (20, 5, 6) | +x | 1.5–3.0 | ±30° |
-| center downwash | (−2, −2, 0) → (2, 2, 6) | −z | 1.0–2.0 | 0° |
-| west tailwind | (−20, −8, 0) → (−12, 3, 6) | −y | 1.5–3.0 | ±30° |
+| Zone | Footprint (square side) | Direction | Speed [m/s] |
+|---|---|---|---|
+| `downwash` | 3–5 m | straight down (−z) | 1.0–2.0 |
+| `crosswind 1`, `crosswind 2` | 6–9 m | horizontal, uniform random heading | 1.5–3.0 |
 
-**Turbulence (unpredictable).** A first-order Dryden (Gauss–Markov) process on each world axis, driven by fresh Gaussian noise every physics step. Its standard deviation is `turbulence_m_s` horizontally (0.6 m/s in the practice race) and half that vertically. Its correlation time is the length scale divided by the airspeed (20 m horizontally, 3 m vertically; airspeed floored at 1 m/s).
+So the zone wind is at most **3.0 m/s** horizontally and **2.0 m/s** downward. For one race the seed draws each box's place, size and heading and each zone's speed from its range. The zone wind is then constant in time, identical on every lap, and fades smoothly to zero within 1.5 m outside the box. Zones are not observed: neither their place nor their wind is in `config` or the observation.
 
-**Seed.** All random draws come from the race seed alone, so every submission meets exactly the same zone winds and the same turbulence sequence. The official seed is chosen by the instructor and kept private until the results are published.
+**Turbulence (unpredictable).** A first-order Dryden (Gauss–Markov) process on each world axis, driven by fresh Gaussian noise every physics step. Its standard deviation is **0.6 m/s** horizontally (`turbulence_m_s`) and half that vertically. Its correlation time is the length scale divided by the airspeed (20 m horizontally, 3 m vertically; airspeed floored at 1 m/s).
+
+**Seed.** All random draws (which gates move where, the wind zones, their speeds and the turbulence) come from the race seed alone, so every submission meets exactly the same circuit and the same wind. The official track and seed are chosen by the instructor and kept private until the results are published. `config/race.json` draws practice races the same way: every `--seed` is another circuit and wind (README).
 
 ## 6. Constraints
 
@@ -79,7 +90,7 @@ The wind is an air velocity in the world frame. It acts on the drone only throug
 |---|---|
 | Thrust | Clipped to [0, `observation.thrust_limit_N`] **without penalty**. 15 N is the limit at full charge; the battery lowers it (below). The clipping uses the limit reported in the observation the action was computed from. |
 | Body rates | Each of p, q, r must be within ±3 rad/s. A command outside this range, a NaN, or a malformed action ends the run as `invalid_action`. |
-| Battery | 3S LiPo model (`drone_race.battery`, equations below). Reaching zero charge ends the run as `battery_depleted`. The 500 mAh pack is sized so that an aggressive controller still finishes 5 laps with most of its charge left; the battery costs time through the lower thrust limit, not by running out. |
+| Battery | 3S LiPo model (`drone_race.battery`, equations below). Reaching zero charge ends the run as `battery_depleted`. The 200 mAh pack lasts about 3.3 min in hover. A fast controller finishes 5 laps with roughly half of its charge left (40-60 % for the TA reference MPC, depending on the track); the battery mainly costs time through the lower thrust limit, but a slow or wasteful controller can run it out. |
 | Maximum tilt | **TBD.** A real racing drone needs its camera to see ahead, so tilt will be limited. The limit and how violations are handled are not decided; for now only `peak_tilt_deg` is logged. |
 | Arena | The collision sphere must stay inside the arena box (`out_of_bounds` otherwise). |
 | Gate frames | Touching a gate bar with the collision sphere adds 5 s per collision; the flight continues (Section 9). |
@@ -90,7 +101,7 @@ The wind is an air velocity in the world frame. It acts on the drone only throug
 power              P     = 3.75 W/N^1.5 · T^1.5                      (≈ 41 W at hover)
 open-circuit volt  V_oc  = 9.9 V + (12.6 V − 9.9 V) · SoC
 terminal voltage   V     = V_oc − R·I,  with P = V·I,  R = 0.05 Ω
-discharge          dSoC/dt = −I / (500 mAh)
+discharge          dSoC/dt = −I / (200 mAh)
 thrust limit       T_max = 15 N · (V / 12.6 V)²
 ```
 

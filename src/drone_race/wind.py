@@ -5,7 +5,7 @@ RotorPy's aerodynamics (rotor drag, parasitic drag, translational lift), which u
 the airspeed ``v - wind``. A given wind therefore pushes harder the faster the
 rotors spin, and the turbulence a drone meets gets faster the faster it flies.
 
-Wind zones (public layout, random strength)
+Wind zones (layout from the race file or drawn by drone_race.randomize, random strength)
     Each zone is a box on the course with a nominal wind direction. For one race the
     seed draws the zone's speed from ``speed_m_s`` and turns its direction about the
     vertical axis by up to ``heading_jitter_deg``. The zone wind is then constant in

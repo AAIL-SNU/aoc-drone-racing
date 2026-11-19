@@ -3,7 +3,8 @@
     drone-race bench                       # calibrate this computer, then time your submission/
     drone-race bench --write-reference     # TAs, once, on the official Linux server
 
-The two example optimal controllers (MPC and MPPI) are the yardstick: their act()
+Three fixed workloads in ``bench_workloads/`` are the yardstick: controllers that hover
+and do a fixed amount of NumPy, SciPy and plain-Python work in every act(). Their act()
 times were measured on the official machine and are stored in
 ``data/reference_machine.json``. Running them here gives this computer's speed
 relative to that machine, which then scales the timings of your own controller.
@@ -46,7 +47,9 @@ def load_calibration() -> dict | None:
     if saved.get("reference_median_act_s") != reference["median_act_s"]:
         return None          # the reference machine was re-measured since: calibrate again
     return saved
-WORKLOADS = {"mpc": "examples/mpc_controller.py", "mppi": "examples/mppi_controller.py"}
+# Fixed CPU workloads (hover + a fixed amount of NumPy, SciPy and plain-Python work per act()).
+WORKLOADS = {name: Path(__file__).with_name("bench_workloads") / f"{name}.py"
+             for name in ("numpy_rollout", "scipy_linalg", "python_loop")}
 UNLIMITED = 1e6     # budget scale that turns deadline enforcement off while measuring
 
 
@@ -63,17 +66,14 @@ def machine() -> dict:
 
 def measure_workloads(config, seconds: float, progress=print) -> dict[str, float]:
     medians = {}
-    for name, relative in WORKLOADS.items():
-        path = submissions.find_repo_file(relative)
-        if path is None:
-            raise FileNotFoundError(f"{relative} not found; run bench from the competition repository")
+    for name, path in WORKLOADS.items():
         medians[name] = float(np.median(act_times(path, config, seconds)))
-        progress(f"  {name:<5} median act {1e3 * medians[name]:6.2f} ms")
+        progress(f"  {name:<13} median act {1e3 * medians[name]:6.2f} ms")
     return medians
 
 
 def bench(submission="submission", race_path=None, *, seconds=10.0, write_reference=False, progress=print):
-    race_path = race_path or submissions.find_repo_file("config/races/competition.json")
+    race_path = race_path or submissions.find_repo_file("config/race.json")
     _, config, _ = load_race(race_path, laps=1)
     reference_seconds = 4.0
     progress(f"this machine: {machine()['processor']}, {machine()['platform']}")
@@ -88,6 +88,9 @@ def bench(submission="submission", race_path=None, *, seconds=10.0, write_refere
         progress(f"wrote {REFERENCE}")
         return None
     reference = json.loads(REFERENCE.read_text())
+    if set(reference["median_act_s"]) != set(WORKLOADS):
+        raise RuntimeError(f"{REFERENCE.name} was measured with other workloads "
+                           f"({', '.join(reference['median_act_s'])}); TAs must re-run `drone-race bench --write-reference`")
     ratio = float(np.exp(np.mean([np.log(reference["median_act_s"][k] / local[k]) for k in WORKLOADS])))
     path = calibration_path()
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -155,7 +155,7 @@ class BatteryPanel:
         self.plot.grid(alpha=0.25)
         self.plot.tick_params(labelsize=8)
         self.plot.legend(handles=[self.soc_trace, self.volt_trace], loc="lower left", fontsize=8, ncol=2)
-        self.readout = self.plot.text(0.99, 0.93, "", transform=self.plot.transAxes, ha="right", va="top",
+        self.readout = self.plot.text(0.99, 0.06, "", transform=self.plot.transAxes, ha="right", va="bottom",
                                       fontsize=9, family="monospace")
         self.artists = (self.soc_trace, self.volt_trace, self.soc_marker, self.cursor, self.readout)
 
