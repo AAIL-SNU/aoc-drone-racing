@@ -1,5 +1,5 @@
-"""Modify this file to implement your own controller.
-The defalut implementation is a conservative, non-optimal gate-following baseline to replace.
+"""Your controller. Replace the body of reset() and act() below.
+As shipped it only holds the start position; examples/ holds complete controllers to start from.
 
 Only the submission/ folder is collected. See COMPETITION.md for the rules.
 
@@ -50,33 +50,17 @@ Battery: drawing thrust T costs power battery_power_coeff * T^1.5, so hard flyin
 faster, and a drained or sagging pack lowers thrust_limit_N. See drone_race.battery.
 """
 
-import numpy as np
+from drone_race import Action
 from drone_race.helpers import track_position
-
-CRUISE_M_S = 2.5      # speed along the path; 3.0 crashes on some wind seeds
-LOOKAHEAD_M = 2.5     # carrot distance along the next gate's axis
 
 
 class Controller:
-    """PD tracking of a point that slides along the next gate's axis (pure pursuit).
-
-    The carrot sits LOOKAHEAD_M ahead of the drone's projection on the gate axis, so the
-    drone lines up with the gate from far away and flies through it without stopping.
-    The desired velocity points at the carrot with speed CRUISE_M_S.
-    """
-
     def reset(self, config):
+        """Called once before the flight. Precompute paths, models, ... here (reset_budget_s)."""
         self.config = config
 
-    def act(self, observation):
-        gate = self.config.track.gates[observation.next_gate]
-        center = np.asarray(gate.center)
-        normal = np.array([np.cos(gate.yaw_rad), np.sin(gate.yaw_rad), 0.0])
-        position = np.asarray(observation.position_m)
-        along = float((position - center) @ normal)          # < 0 before the gate plane
-        lateral = np.linalg.norm(position - center - along * normal)   # distance off the gate axis
-        # Hold the carrot in front of the gate until the drone is lined up with the opening.
-        target = center + min(along + LOOKAHEAD_M, 1.0 - lateral) * normal
-        direction = target - position
-        velocity = CRUISE_M_S * direction / max(np.linalg.norm(direction), 1e-6)
-        return track_position(observation, target, self.config, target_velocity=velocity, max_accel=5.0)
+    def act(self, observation) -> Action:
+        """Called every control_dt_s; must return within act_budget_s."""
+        # TODO: fly through config.track.gates in order. This placeholder holds the start
+        # position with the PD helper; a raw Action(thrust_N, body_rates_rad_s) works the same way.
+        return track_position(observation, self.config.track.start, self.config)

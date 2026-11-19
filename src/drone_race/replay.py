@@ -183,7 +183,8 @@ class RaceView:
         self.drone = VehicleGlyph(ax)
         self.positions = []
         self.last_item = None
-        self.title = self.figure.suptitle("Quadrotor racing", y=0.97, fontsize=15)
+        self.track_name = track.name
+        self.title = self.figure.suptitle(track.name, y=0.97, fontsize=15)
         # Frame the course for inspection; these display limits are not flight bounds.
         centers = np.array([track.start, *(g.center for g in track.gates)])
         padding = np.array([1.2, 1.5, 1.2])
@@ -233,7 +234,7 @@ class RaceView:
         for index, line in enumerate(self.gates):
             line.set_color("#438c55" if index < passed else "#276fa4" if index == passed else "#9ca7b0")
         lap = f" | lap {self.last_item['lap'] + 1}" if "lap" in self.last_item else ""
-        self.title.set_text(f"Quadrotor racing | t = {self.last_item['time_s']:.2f} s{lap} | next gate: {passed}")
+        self.title.set_text(f"{self.track_name} | t = {self.last_item['time_s']:.2f} s{lap} | next gate: {passed}")
 
     def save(self, path):
         path = Path(path)

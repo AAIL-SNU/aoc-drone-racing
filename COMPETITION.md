@@ -23,7 +23,7 @@ This document is the rulebook: the race, the vehicle, the disturbances, the cons
 
 | Item | Rule |
 |---|---|
-| Circuit | `config/tracks/circuit.json` (`aoc-circuit-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. |
+| Circuit | `config/tracks/circuit_1.json` (`aoc-circuit-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. |
 | Arena | The vehicle must stay inside the box x ∈ [−20, 20] m, y ∈ [−10, 10] m, z ∈ [0, 6] m (`track.bounds`). The ground is the bottom face of this box. |
 | Laps | **5 laps.** One lap passes gates 0 → 9 in order; gate 9 is the start/finish line. |
 | Start | At rest, hovering at `track.start` = (−1.6, −1.6, 1.5) m, just past gate 9, at simulated time t = 0. |

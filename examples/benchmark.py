@@ -1,8 +1,8 @@
-"""Compare the baseline, MPC and MPPI example controllers on one race.
+"""Compare the PD, MPC and MPPI example controllers on one race.
 
     python examples/benchmark.py                                  # practice race, 1 lap
     python examples/benchmark.py --laps 5 --controllers mpc mppi  # the full race
-    python examples/benchmark.py --track config/tracks/circuit.json      # any track, no disturbance
+    python examples/benchmark.py --track config/tracks/circuit_1.json      # any track, no disturbance
     python examples/benchmark.py --seeds 1 2 3 4 5 --turbulence 1.0 --jobs 8 --controllers mpc mppi
     python examples/benchmark.py --log-dir outputs/benchmark      # also save logs for replay
 
@@ -22,7 +22,7 @@ from drone_race.track import load_track
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTROLLERS = {
-    "baseline": ROOT / "submission",
+    "pd": ROOT / "examples/pd_controller.py",
     "mpc": ROOT / "examples/mpc_controller.py",
     "mppi": ROOT / "examples/mppi_controller.py",
 }

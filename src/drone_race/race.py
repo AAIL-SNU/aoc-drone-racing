@@ -1,6 +1,6 @@
 """Race files: one JSON that fixes the track, the number of laps and the disturbance.
 
-    {"name": "competition", "track": "../tracks/circuit.json", "laps": 5,
+    {"name": "competition", "track": "../tracks/circuit_1.json", "laps": 5,
      "scenario": {"seed": 0, "turbulence_m_s": 0.6, "wind_zones": [{"name": ..., "lower": ..., ...}]}}
 
 Wind zones and turbulence are described in drone_race.wind.

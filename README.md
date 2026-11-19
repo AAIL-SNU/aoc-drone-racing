@@ -12,8 +12,8 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 | Path | What it is | Do you edit it? |
 |---|---|---|
 | `submission/` | **Your controller.** The only folder that is collected and scored | **Yes** |
-| `examples/` | Example MPC and MPPI controllers to start from, and a benchmark script | Copy from it |
-| `config/tracks/` | Track files: `circuit.json`, the competition circuit | No |
+| `examples/` | Example PD, MPC and MPPI controllers to start from, and a benchmark script | Copy from it |
+| `config/tracks/` | Track files: `circuit_1.json` is the competition circuit; `circuit_2.json`–`circuit_5.json` are alternative layouts | No |
 | `config/races/` | Race files (track + laps + disturbance); `competition.json` is the default | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
@@ -69,7 +69,7 @@ The types are defined in `src/drone_race/api.py`:
 
 All quantities are SI; the world frame is z-up. The meaning of each value, the limits and what happens when they are exceeded are in [COMPETITION.md](COMPETITION.md). The docstring at the top of `submission/controller.py` summarizes the same interface.
 
-The shipped `submission/controller.py` is a deliberately slow gate-following baseline (pure pursuit plus a PD position loop) for you to replace.
+The shipped `submission/controller.py` is a template that only holds its start position. Replace its `reset()` and `act()`, or start from one of the controllers in `examples/`.
 
 How the controller is run:
 
@@ -101,7 +101,7 @@ drone-race run --turbulence 1.0         # stronger turbulence (std in m/s, 0 to 
 drone-race run --debug                  # controller inside this process: breakpoints/pdb work, timing not enforced
 
 drone-race run --controller examples/mpc_controller.py --laps 2   # any controller folder or .py file
-drone-race run --track config/tracks/circuit.json                # any track: 1 lap, no disturbance
+drone-race run --track config/tracks/circuit_1.json              # any track: 1 lap, no disturbance
 drone-race run --race path/to/race.json                          # any race file
 
 drone-race replay outputs/submission_competition.json                # watch a saved run again
@@ -118,7 +118,7 @@ The default race is `config/races/competition.json`. A race file bundles a track
 ```json
 {
   "name": "competition",
-  "track": "../tracks/circuit.json",
+  "track": "../tracks/circuit_1.json",
   "laps": 5,
   "scenario": {
     "seed": 0,
@@ -161,7 +161,11 @@ drone-race check                # layout, size, packages and a short flight: mus
 
 ## Example controllers
 
-Two example racers live in `examples/`. Each is a complete single-file submission: copy it to `submission/controller.py`, or pass it with `--controller`.
+Three example controllers live in `examples/`. Each is a complete single-file submission: copy it to `submission/controller.py`, or pass it with `--controller`.
+
+- `examples/pd_controller.py`: a deliberately slow gate-following baseline. Pure pursuit along the next gate's axis at a fixed 2.5 m/s, with the `track_position` PD loop from `drone_race.helpers`. It finishes reliably but makes no attempt at speed, and is the simplest place to see the interface working.
+
+The two racers below are much faster:
 
 - `examples/mpc_controller.py`: nonlinear MPC solved with iLQR (Gauss–Newton DDP) over a 1 s horizon. Input bounds are built into the model through tanh squashing. A smooth "gate funnel" cost keeps the drone centered near upcoming gates.
 - `examples/mppi_controller.py`: MPPI with sampled rollouts evaluated in parallel. Crossing a gate plane outside its opening or leaving the bounds is a hard penalty in the cost.
