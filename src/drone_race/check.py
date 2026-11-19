@@ -1,73 +1,17 @@
-"""Official scoring of many submissions, and the pre-submission self-check.
+"""Pre-submission self-check: does this submission load and fly at all?
 
-    drone-race evaluate teams/ --race config/races/official.json --seed 1234 --cpu 3
     drone-race check submission/
 
-``evaluate`` runs one team after another (never in parallel, so timing is comparable)
-and writes outputs/evaluation/logs/<team>.json, .../stderr/<team>.txt and
-outputs/evaluation/leaderboard.json, the input for the dashboard.
+Scoring other people's submissions is the organiser's job and lives in the
+admin repository, not here.
 """
 
-import json
 from pathlib import Path
 import re
 
-from .env import run_episode, save_log
+from .env import run_episode
 from .race import load_race
 from . import submission as submissions
-
-
-def rank(summaries: dict[str, dict]) -> list[dict]:
-    """Finished runs by score; then unfinished ones by progress, then by time survived."""
-    rows = []
-    for team, s in summaries.items():
-        rows.append({
-            "team": team, "status": s["status"], "completed": s["completed"],
-            "score_s": s["score_s"] if s["completed"] else None, "flight_time_s": s["flight_time_s"],
-            "penalty_s": s["penalty_s"], "laps_completed": s["laps_completed"], "laps_total": s["laps_total"],
-            "lap_times_s": s["lap_times_s"], "fastest_lap_s": s["fastest_lap_s"],
-            "gates_passed": s["gates_passed"], "gate_collisions": s["gate_collisions"],
-            "deadline_misses": s["deadline_misses"], "act_p99_ms": 1e3 * s["controller_p99_act_s"],
-            "error": s["error"],
-        })
-    rows.sort(key=lambda r: (0, r["score_s"], 0) if r["completed"] else (1, -r["gates_passed"], -r["flight_time_s"]))
-    for place, row in enumerate(rows, 1):
-        row["rank"] = place
-    return rows
-
-
-def evaluate(submissions_dir, race_path, out_dir, *, seed=None, laps=None, cpu=None,
-             teams=None, progress=print) -> list[dict]:
-    submissions_dir, out_dir = Path(submissions_dir), Path(out_dir)
-    name, config, scenario = load_race(race_path, laps=laps, seed=seed)
-    team_dirs = sorted(p for p in submissions_dir.iterdir() if p.is_dir() and (p / submissions.ENTRY).is_file())
-    if teams:
-        team_dirs = [p for p in team_dirs if p.name in set(teams)]
-    progress("note: submissions are isolated by process only; sandbox the host itself")
-    (out_dir / "logs").mkdir(parents=True, exist_ok=True)
-    (out_dir / "stderr").mkdir(parents=True, exist_ok=True)
-    summaries, digests = {}, {}
-    for team_dir in team_dirs:
-        team = team_dir.name
-        problems = submissions.layout_problems(submissions.resolve(team_dir))
-        progress(f"[{team}] running {name} ({config.laps} laps, seed {scenario.seed})"
-                 + (f" -- {'; '.join(problems)}" if problems else ""))
-        with open(out_dir / "stderr" / f"{team}.txt", "w") as stderr:
-            log = run_episode(team_dir, config, scenario, cpu=cpu, stderr=stderr)
-        if problems:
-            log["summary"].update(status="disqualified", completed=False, error="; ".join(problems))
-        log["race"] = {"name": name, "team": team}
-        save_log(log, out_dir / "logs" / f"{team}.json")
-        summaries[team], digests[team] = log["summary"], log["provenance"]["submission_sha256"]
-        s = log["summary"]
-        progress(f"[{team}] {s['status']}  score {s['score_s']:.2f} s  laps {s['laps_completed']}/{s['laps_total']}"
-                 f"  gate collisions {s['gate_collisions']}  deadline misses {s['deadline_misses']}")
-    rows = rank(summaries)
-    for row in rows:
-        row["submission_sha256"] = digests[row["team"]]
-    board = {"race": name, "laps": config.laps, "seed": scenario.seed, "track": config.track.name, "results": rows}
-    (out_dir / "leaderboard.json").write_text(json.dumps(board, indent=2) + "\n")
-    return rows
 
 
 # ---------------------------------------------------------------------------- self-check
