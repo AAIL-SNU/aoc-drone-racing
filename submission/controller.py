@@ -22,7 +22,7 @@ reset(config: PublicConfig) is called once before flight with:
     config.vehicle_radius_m   0.28, collision sphere
     config.laps               number of laps (5 in the competition); gate 0 follows the last gate
     config.act_budget_s       0.02, compute budget of one act() call on the official machine
-    config.reset_budget_s     60, compute budget of reset() on the official machine
+    config.reset_budget_s     60, CPU budget of importing this file + reset() on the official machine
     config.battery_*          battery model parameters (drone_race.battery has the exact equations)
 
 act(observation: Observation) is called every control_dt_s with noise-free state:

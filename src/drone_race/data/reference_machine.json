@@ -7,7 +7,7 @@
     "python": "3.12.12",
     "cpus": 11
   },
-  "track": "aoc-circuit-v1",
+  "track": "aoc-eight-v1",
   "seconds": 4.0,
   "median_act_s": {
     "mpc": 0.016097999999999946,

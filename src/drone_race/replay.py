@@ -129,6 +129,57 @@ class AttitudePanel:
                               f"yaw {(yaw + 180) % 360 - 180:+6.1f}°  tilt {tilt:5.1f}°")
 
 
+class BatteryPanel:
+    """Remaining charge [%] and terminal voltage over the flight, revealed up to the replay time."""
+
+    SOC_COLOR, VOLT_COLOR = "#438c55", "#b07d2b"
+
+    def __init__(self, figure, spec, times, soc, voltage, voltage_range=None, sharex=None):
+        self.times = np.asarray(times)
+        self.soc, self.voltage = 100 * np.asarray(soc), np.asarray(voltage)
+        self.plot = figure.add_subplot(spec, sharex=sharex)
+        self.volt = self.plot.twinx()
+        self.plot.plot(self.times, self.soc, color=self.SOC_COLOR, alpha=0.18, linewidth=1.0)
+        self.volt.plot(self.times, self.voltage, color=self.VOLT_COLOR, alpha=0.15, linewidth=0.8)
+        self.soc_trace, = self.plot.plot([], [], color=self.SOC_COLOR, linewidth=1.5, label="charge")
+        self.volt_trace, = self.volt.plot([], [], color=self.VOLT_COLOR, linewidth=0.9, label="voltage")
+        self.soc_marker, = self.plot.plot([], [], "o", color=self.SOC_COLOR, markersize=4)
+        self.cursor = self.plot.axvline(0, color="#253744", linewidth=0.8)
+        self.plot.set(xlim=(self.times[0], max(self.times[-1], self.times[0] + 0.01)), ylim=(0, 105),
+                      xlabel="t [s]", ylabel="charge [%]")
+        low, high = voltage_range or (self.voltage.min(), self.voltage.max())
+        pad = 0.05 * max(high - low, 0.1)
+        self.volt.set_ylim(low - pad, high + pad)
+        self.volt.set_ylabel("voltage [V]", color=self.VOLT_COLOR, fontsize=9)
+        self.volt.tick_params(labelsize=8, colors=self.VOLT_COLOR)
+        self.plot.grid(alpha=0.25)
+        self.plot.tick_params(labelsize=8)
+        self.plot.legend(handles=[self.soc_trace, self.volt_trace], loc="lower left", fontsize=8, ncol=2)
+        self.readout = self.plot.text(0.99, 0.93, "", transform=self.plot.transAxes, ha="right", va="top",
+                                      fontsize=9, family="monospace")
+        self.artists = (self.soc_trace, self.volt_trace, self.soc_marker, self.cursor, self.readout)
+
+    def draw(self, time_s):
+        index = max(int(np.searchsorted(self.times, time_s, side="right")), 1)
+        t = self.times[:index]
+        self.soc_trace.set_data(t, self.soc[:index])
+        self.volt_trace.set_data(t, self.voltage[:index])
+        self.soc_marker.set_data([t[-1]], [self.soc[index - 1]])
+        self.cursor.set_xdata([time_s, time_s])
+        self.readout.set_text(f"battery {self.soc[index - 1]:5.1f}%  {self.voltage[index - 1]:5.2f} V")
+
+
+def battery_from_log(log):
+    """(times, soc, voltage, voltage_range) from a log's samples, or None for logs without a battery."""
+    samples = log["samples"]
+    if not samples or "battery_soc" not in samples[0]:
+        return None
+    config = log.get("config", {})
+    full, empty = config.get("battery_voltage_full_V"), config.get("battery_voltage_empty_V")
+    return ([item["time_s"] for item in samples], [item["battery_soc"] for item in samples],
+            [item["battery_voltage_V"] for item in samples], (empty, full) if full and empty else None)
+
+
 def draw_wind_zone(axes, lo, hi, wind, name):
     """Translucent box plus an arrow of the zone's wind (1 m of arrow per 1 m/s)."""
     if np.any(hi <= lo):
@@ -151,21 +202,32 @@ def wind_zones_from_log(log) -> list:
 
 
 class RaceView:
-    def __init__(self, track, *, live=False, attitude=None, wind_zones=()):
+    def __init__(self, track, *, live=False, attitude=None, wind_zones=(), battery=None):
         """attitude: optional (times_s, euler_deg) arrays; adds a pose panel.
-        wind_zones: optional (lower, upper, wind_m_s, name) tuples, drawn as boxes with the zone's wind."""
+        wind_zones: optional (lower, upper, wind_m_s, name) tuples, drawn as boxes with the zone's wind.
+        battery: optional (times_s, soc, voltage_V, (empty_V, full_V) or None); adds a battery plot
+        below the attitude plot (needs attitude)."""
         import matplotlib.pyplot as plt
         self.plt, self.live = plt, live
-        self.attitude = None
+        self.attitude = self.battery = None
         if attitude is None:
             self.figure = plt.figure(figsize=(10, 6))
             self.axes = self.figure.add_subplot(111, projection="3d")
-        else:
+        elif battery is None:
             self.figure = plt.figure(figsize=(15, 6.5))
             grid = self.figure.add_gridspec(2, 2, width_ratios=(1.8, 1), height_ratios=(1.25, 1),
                                             wspace=0.06, hspace=0.22)
             self.axes = self.figure.add_subplot(grid[:, 0], projection="3d")
             self.attitude = AttitudePanel(self.figure, grid[0, 1], grid[1, 1], *attitude)
+        else:
+            self.figure = plt.figure(figsize=(15, 7.8))
+            grid = self.figure.add_gridspec(3, 2, width_ratios=(1.8, 1), height_ratios=(1.25, 1, 0.75),
+                                            wspace=0.06, hspace=0.3)
+            self.axes = self.figure.add_subplot(grid[:, 0], projection="3d")
+            self.attitude = AttitudePanel(self.figure, grid[0, 1], grid[1, 1], *attitude)
+            self.attitude.plot.set_xlabel("")
+            self.attitude.plot.tick_params(labelbottom=False)
+            self.battery = BatteryPanel(self.figure, grid[2, 1], *battery, sharex=self.attitude.plot)
         ax = self.axes
         self.gates = []
         for i, gate in enumerate(track.gates):
@@ -205,7 +267,8 @@ class RaceView:
         if self.attitude is None:
             self.figure.subplots_adjust(left=0.02, right=0.96, bottom=0.03, top=0.87)
         else:
-            self.figure.subplots_adjust(left=0.01, right=0.98, bottom=0.09, top=0.88)
+            self.figure.subplots_adjust(left=0.01, right=0.98 if self.battery is None else 0.955,
+                                        bottom=0.09 if self.battery is None else 0.07, top=0.88)
         if live:
             plt.ion()
             plt.show(block=False)
@@ -230,6 +293,8 @@ class RaceView:
         self.drone.transform(points[-1], rotation)
         if self.attitude is not None:
             self.attitude.draw(self.last_item["time_s"], rotation)
+        if self.battery is not None:
+            self.battery.draw(self.last_item["time_s"])
         passed = self.last_item["next_gate"]
         for index, line in enumerate(self.gates):
             line.set_color("#438c55" if index < passed else "#276fa4" if index == passed else "#9ca7b0")
@@ -255,7 +320,8 @@ def replay(log_path, *, output=None, show=False, speed=2.0):
     samples = log["samples"]
     attitude = (np.array([item["time_s"] for item in samples]),
                 euler_deg([item["quaternion_xyzw"] for item in samples]))
-    view = RaceView(track_from_dict(log["config"]["track"]), attitude=attitude, wind_zones=wind_zones_from_log(log))
+    view = RaceView(track_from_dict(log["config"]["track"]), attitude=attitude, wind_zones=wind_zones_from_log(log),
+                    battery=battery_from_log(log))
     try:
         if output and Path(output).suffix.lower() != ".gif":
             for item in samples:
@@ -269,7 +335,8 @@ def replay(log_path, *, output=None, show=False, speed=2.0):
         def frame(index):
             view.positions = [item["position_m"] for item in samples[:index]]
             view.update(samples[index])
-            return view.line, *view.drone.artists, *view.attitude.artists, view.title
+            battery = view.battery.artists if view.battery is not None else ()
+            return view.line, *view.drone.artists, *view.attitude.artists, *battery, view.title
 
         animation = FuncAnimation(view.figure, frame, frames=indices, interval=1000 / 12, blit=False)
         if output:

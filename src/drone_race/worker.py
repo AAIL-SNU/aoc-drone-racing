@@ -7,6 +7,8 @@ it exists for debugging (breakpoints, print-heavy work) and does not enforce tim
 
 Compute time is the worker's CPU time (all of its threads), not wall-clock time:
 being preempted by the OS never makes a call late, and extra threads never help.
+Each call is charged everything since the previous call ended, so CPU used between
+calls counts too, and importing the submission counts towards reset().
 
 Worker side: ``main()``. The protocol uses a private copy of stdout, and fd 1 is
 pointed at stderr, so ``print`` in student code can never corrupt a message.
@@ -32,7 +34,7 @@ THREAD_ENV = {
     "XLA_FLAGS": "--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1",
     "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1",
 }
-STARTUP_TIMEOUT_S = 120.0   # interpreter start + importing the submission (torch can take a while)
+STARTUP_TIMEOUT_S = 120.0   # wall-clock safety net for a hung import; its CPU is charged to reset()
 
 
 class ControllerError(Exception):
@@ -215,13 +217,21 @@ def main(argv=None):
 
     submission = Submission(Path(root).resolve(), Path(entry).resolve())
     os.chdir(submission.root)
+    # Each call is charged all CPU the process used since the previous call ended, not just
+    # the CPU inside reset()/act(): importing the submission counts towards reset(), and work
+    # done by background threads between calls (while the simulator steps the physics) lands
+    # on the next call instead of being free.
+    last = time.process_time()
     try:
         controller = load_controller(submission)
     except BaseException as exc:
         traceback.print_exc()
         send({"ok": False, "error": _describe(exc)})
         return 1
-    send({"ok": True, "python": sys.version.split()[0], "modules": third_party_modules(submission.root)})
+    own = time.thread_time()
+    modules = third_party_modules(submission.root)
+    last += time.thread_time() - own               # the simulator's bookkeeping, not the controller's
+    send({"ok": True, "python": sys.version.split()[0], "modules": modules})
 
     for line in sys.stdin:
         message = json.loads(line)
@@ -231,15 +241,20 @@ def main(argv=None):
         try:
             if kind == "reset":
                 config = config_from_dict(message["config"])
-                t0 = time.process_time()
                 controller.reset(config)
-                send({"ok": True, "elapsed": time.process_time() - t0,
-                      "modules": third_party_modules(submission.root)})
+                now = time.process_time()
+                elapsed = now - last
+                # Listing the imports is the simulator's work, not the controller's: shift the
+                # baseline by this thread's share, so other threads' CPU meanwhile still counts.
+                own = time.thread_time()
+                modules = third_party_modules(submission.root)
+                last = now + time.thread_time() - own
+                send({"ok": True, "elapsed": elapsed, "modules": modules})
             elif kind == "act":
                 observation = observation_from_dict(message["observation"])
-                t0 = time.process_time()
                 raw = controller.act(observation)
-                elapsed = time.process_time() - t0
+                now = time.process_time()
+                elapsed, last = now - last, now
                 action, invalid = action_to_wire(raw)
                 send({"ok": True, "elapsed": elapsed, "action": action, "invalid": invalid})
             else:

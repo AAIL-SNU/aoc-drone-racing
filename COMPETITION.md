@@ -23,7 +23,7 @@ This document is the rulebook: the race, the vehicle, the disturbances, the cons
 
 | Item | Rule |
 |---|---|
-| Circuit | `config/tracks/circuit_1.json` (`aoc-circuit-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. |
+| Circuit | `config/tracks/eight_1.json` (`aoc-eight-v1`): a closed figure-eight of **10 gates**, where a high path and a low path cross in the middle. No obstacles. Picture: `config/tracks/eight_1.png`. |
 | Arena | The vehicle must stay inside the box x ∈ [−20, 20] m, y ∈ [−10, 10] m, z ∈ [0, 6] m (`track.bounds`). The ground is the bottom face of this box. |
 | Laps | **5 laps.** One lap passes gates 0 → 9 in order; gate 9 is the start/finish line. |
 | Start | At rest, hovering at `track.start` = (−1.6, −1.6, 1.5) m, just past gate 9, at simulated time t = 0. |
@@ -103,11 +103,10 @@ Flying hard drains the pack faster, and both a drained pack (lower V_oc) and a l
 - **One thread, no GPU.** BLAS, OpenMP, numba, JAX and similar libraries are fixed to one thread, and the process is pinned to one core. Run neural networks on the CPU. Train offline on your own machine and submit the weights in `assets/`.
 - **Python packages.** The official environment is Python 3.12.12 with the versions pinned in `requirements.txt`. If you need a package that is not listed, ask the TAs at least one week before the competition. The list is frozen after that.
 - **50 Hz compute budget.**
-  - `act()` must return within **20 ms on the official server**. Time is measured as the CPU time of the whole controller process, so OS preemption never makes a call late, and extra threads only use up the budget faster.
+  - `act()` must return within **20 ms on the official server**. Time is measured as the CPU time of the whole controller process, so OS preemption never makes a call late, and extra threads only use up the budget faster. Each call is charged all CPU the process used since the previous call returned, so work done by background threads between calls counts too.
   - A late call's result is **dropped**. Simulated time keeps running while the controller computes: the previous action stays applied for as many 20 ms periods as the call took (rounded up), and the next observation comes after that. Each late call counts as one `deadline_misses`.
   - An `act()` call that takes longer than 0.5 s is treated as hung and ends the run (`controller_timeout`).
-  - `reset()` may take up to **60 s**. Use it for offline trajectory optimization or JIT compilation.
-  - Importing the submission may take up to 120 s.
+  - Importing the submission and `reset()` together may use up to **60 s** of CPU time; exceeding it ends the run before the start (`controller_timeout`). Use `reset()` for offline trajectory optimization or JIT compilation.
 - **Laptop vs. server.** `drone-race bench` estimates the speed ratio between your computer and the official server and makes `drone-race run` enforce an equivalent budget locally (see README). It is an estimate: keep at least 30 % margin at the p99 `act()` time. Before the competition, the TAs will run practice submissions on the official server and share the measured timing.
 
 ## 8. Submission rules
@@ -124,6 +123,7 @@ submission/
 - At run time the working directory is `submission/`, so relative paths such as `open("assets/weights.npz")` work.
 - Only the Python standard library, the packages in `requirements.txt` and `drone_race` itself may be imported.
 - `drone-race check` must end with `OK` before you submit.
+- **Fair play.** The controller must do all of its computing in its own process. Starting other processes (`subprocess`, `multiprocessing`, `os.fork`, ...) and tampering with the simulator, the timing measurement or the controller–simulator protocol (for example by replacing `time` functions or writing to the protocol stream) are forbidden. The TAs review the submitted code; a submission that does any of this is disqualified.
 
 ## 9. Scoring
 

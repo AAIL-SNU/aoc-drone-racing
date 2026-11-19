@@ -117,11 +117,30 @@ def main():
     make.add_argument("output")
     make.add_argument("--gates", type=int, default=10)
     make.add_argument("--seed", type=int, default=0)
+    make.add_argument("--no-plot", action="store_true", help="Do not write the PNG picture next to the track")
+    plot = sub.add_parser("plot-track", help="Draw track files as PNGs: top view, 3D view, altitude profile")
+    plot.add_argument("tracks", nargs="+", help="Track JSON file(s)")
+    plot.add_argument("--output", default=None,
+                      help="PNG path (one track only; default: next to each track, same name, .png)")
     args = parser.parse_args()
 
+    if args.command in ("make-track", "plot-track"):
+        import matplotlib
+        matplotlib.use("Agg")
+        from .trackplot import save_track_plot
     if args.command == "make-track":
-        save_track(random_track(args.gates, args.seed), args.output)
+        track = random_track(args.gates, args.seed)
+        save_track(track, args.output)
         print(f"Track: {Path(args.output).resolve()}")
+        if not args.no_plot:
+            print(f"Plot:  {save_track_plot(track, Path(args.output).with_suffix('.png')).resolve()}")
+        return
+    if args.command == "plot-track":
+        if args.output and len(args.tracks) > 1:
+            parser.error("--output needs exactly one track")
+        for path in args.tracks:
+            output = args.output or Path(path).with_suffix(".png")
+            print(f"Plot: {save_track_plot(load_track(path), output).resolve()}")
         return
     if args.command == "replay":
         if args.output:

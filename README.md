@@ -13,7 +13,7 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 |---|---|---|
 | `submission/` | **Your controller.** The only folder that is collected and scored | **Yes** |
 | `examples/` | Example PD, MPC and MPPI controllers to start from, and a benchmark script | Copy from it |
-| `config/tracks/` | Track files: `circuit_1.json` is the competition circuit; `circuit_2.json`–`circuit_5.json` are alternative layouts | No |
+| `config/tracks/` | Track files, named `<shape>_<version>.json`: `eight_1.json` is the competition circuit; `twisted_eight_1`, `inner_loop_1` (practice race), `trefoil_1` and `coaster_1` are alternative layouts. Each `.png` beside a track is its picture (top view, 3D view, altitude profile) | No |
 | `config/races/` | Race files (track + laps + disturbance); `competition.json` is the default | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
 | `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
@@ -88,6 +88,7 @@ These ship with the package and may be imported from a submission, or ignored:
 | `drone_race.battery` | The exact battery equations the simulator uses: `terminal_voltage`, `thrust_limit`, `current`, `BatteryModel.step`, ... |
 | `drone_race.helpers` | `track_position`: a PD position tracker (optional velocity feedforward `target_velocity`, gains `kp`/`kd`, `max_accel`) that returns an `Action` |
 | `drone_race.rules` | The referee's gate geometry: `gate_local`, `inside_opening`, `frame_boxes`, ... |
+| `drone_race.trackplot` | `plot_track(track)` returns a matplotlib figure (top view with pass directions, 3D view, altitude profile); `save_track_plot(track, path)` writes it as a PNG |
 
 ## Running
 
@@ -101,15 +102,16 @@ drone-race run --turbulence 1.0         # stronger turbulence (std in m/s, 0 to 
 drone-race run --debug                  # controller inside this process: breakpoints/pdb work, timing not enforced
 
 drone-race run --controller examples/mpc_controller.py --laps 2   # any controller folder or .py file
-drone-race run --track config/tracks/circuit_1.json              # any track: 1 lap, no disturbance
+drone-race run --track config/tracks/eight_1.json              # any track: 1 lap, no disturbance
 drone-race run --race path/to/race.json                          # any race file
 
 drone-race replay outputs/submission_competition.json                # watch a saved run again
 drone-race replay outputs/submission_competition.json --output outputs/replay.gif
-drone-race make-track outputs/random.json --gates 10 --seed 3     # a seeded random track for testing
+drone-race make-track outputs/random.json --gates 10 --seed 3     # a seeded random track for testing (+ outputs/random.png)
+drone-race plot-track config/tracks/twisted_eight_1.json               # picture of a track -> config/tracks/twisted_eight_1.png
 ```
 
-`run` simulates the whole race first, printing each lap as it completes, and only then opens the window, which plays the flight back at real time (`--speed 2` for double speed). Drawing therefore never slows the controller down. The terminal shows the status, score, lap times, gate collisions, `act()` timing, peak tilt and battery use.
+`run` simulates the whole race first, printing each lap as it completes, and only then opens the window, which plays the flight back at real time (`--speed 2` for double speed). Drawing therefore never slows the controller down. The window shows the course with the flight path, a chase view of the vehicle, roll/pitch/yaw over time, and the battery's remaining charge [%] and terminal voltage over time. The terminal shows the status, score, lap times, gate collisions, `act()` timing, peak tilt and battery use.
 
 ### Race files
 
@@ -118,7 +120,7 @@ The default race is `config/races/competition.json`. A race file bundles a track
 ```json
 {
   "name": "competition",
-  "track": "../tracks/circuit_1.json",
+  "track": "../tracks/eight_1.json",
   "laps": 5,
   "scenario": {
     "seed": 0,

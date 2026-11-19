@@ -107,6 +107,11 @@ def validate_config(config: PublicConfig):
         raise ValueError("Battery resistance too high to deliver full thrust")
 
 
+def hard_reset_timeout(budget_s: float) -> float:
+    """Wall-clock limit of reset(): a safety net for a hung call. The budget itself is CPU time."""
+    return 2 * budget_s + 5.0
+
+
 def hard_act_timeout(budget_s: float) -> float:
     """act() calls this slow are not late but hung: the worker is killed and the run ends."""
     return max(0.5, 25 * budget_s)
@@ -159,11 +164,16 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
         handle = (InlineController(sub) if debug else
                   WorkerController(sub, command_prefix=command_prefix, mount_root=mount_root, cpu=cpu, stderr=stderr))
         modules = handle.hello.get("modules", [])
-        reply = handle.reset(config, timeout=config.reset_budget_s * budget_scale)
+        reply = handle.reset(config, timeout=hard_reset_timeout(config.reset_budget_s * budget_scale))
         init_time, modules = reply["elapsed"], reply.get("modules", modules)
     except ControllerError as exc:
         status, error = exc.status, str(exc)
     enforced = handle is not None and handle.enforces_timing
+    if error is None and enforced and init_time > config.reset_budget_s * budget_scale:
+        # The budget is CPU time of import + reset(), like act(); the wall-clock timeout above
+        # only catches a reset() that hangs.
+        status, error = "controller_timeout", (f"reset: import + reset() used {init_time:.1f} s of CPU, "
+                                               f"budget {config.reset_budget_s * budget_scale:.1f} s")
     record()
     done = error is not None
     substeps = round(config.control_dt_s / config.physics_dt_s)
