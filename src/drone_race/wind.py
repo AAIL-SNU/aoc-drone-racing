@@ -24,6 +24,7 @@ so every controller faces the same zone winds and the same noise sequence.
 """
 
 from dataclasses import dataclass, field
+import math
 
 import numpy as np
 
@@ -65,12 +66,39 @@ def _smoothstep(t):
     return t * t * (3 - 2 * t)
 
 
+def _ramp(t: float) -> float:
+    """``_smoothstep`` for one number. Called six times per wind zone per physics
+    step, where a NumPy call on three floats costs more than the arithmetic."""
+    if t <= 0.0:
+        return 0.0
+    if t >= 1.0:
+        return 1.0
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _weight(lower, upper, ramp: float, x: float, y: float, z: float) -> float:
+    """``zone_weight`` over plain floats, rejecting the common case first.
+
+    A zone is a fixed box and the vehicle moves a few centimetres per step, so
+    almost every call is for a position well outside one: test that before
+    computing six smoothsteps.
+    """
+    if (x <= lower[0] - ramp or x >= upper[0] + ramp
+            or y <= lower[1] - ramp or y >= upper[1] + ramp
+            or z <= lower[2] - ramp or z >= upper[2] + ramp):
+        return 0.0
+    weight = 1.0
+    for axis, value in enumerate((x, y, z)):
+        weight *= (_ramp((value - lower[axis] + ramp) / ramp)
+                   * _ramp((upper[axis] + ramp - value) / ramp))
+        if weight == 0.0:
+            return 0.0
+    return weight
+
+
 def zone_weight(zone: WindZone, position) -> float:
     """1 inside the box, smoothly down to 0 at ``ramp_m`` outside it."""
-    p, lo, hi = np.asarray(position, dtype=float), np.array(zone.lower), np.array(zone.upper)
-    rise = _smoothstep((p - lo + zone.ramp_m) / zone.ramp_m)
-    fall = _smoothstep((hi + zone.ramp_m - p) / zone.ramp_m)
-    return float(np.prod(rise * fall))
+    return _weight(zone.lower, zone.upper, zone.ramp_m, *(float(v) for v in position))
 
 
 @dataclass
@@ -95,23 +123,52 @@ class WindField:
         self.sigma = self.sigma_m_s * np.array([1.0, 1.0, VERTICAL_SIGMA_RATIO])
         self.length = np.array([LENGTH_SCALE_HORIZONTAL_M] * 2 + [LENGTH_SCALE_VERTICAL_M])
         self.turbulence = self.sigma * self.rng.standard_normal(3)      # start in the stationary distribution
+        # The same numbers as plain floats. ``step`` runs once per physics step
+        # on three components, which is below the size where NumPy pays off.
+        self._sigma = tuple(float(x) for x in self.sigma)
+        self._length = tuple(float(x) for x in self.length)
+        self._turbulence = tuple(float(x) for x in self.turbulence)
+        self._boxes = [(zone.lower, zone.upper, float(zone.ramp_m),
+                        tuple(float(x) for x in vector))
+                       for zone, vector in zip(self.zones, self.zone_wind)]
 
     def mean(self, position) -> np.ndarray:
-        wind = np.zeros(3)
-        for zone, vector in zip(self.zones, self.zone_wind):
-            weight = zone_weight(zone, position)
-            if weight > 0:
-                wind += weight * vector
-        return wind
+        return np.array(self._mean(*(float(v) for v in position)))
+
+    def _mean(self, x: float, y: float, z: float):
+        mx = my = mz = 0.0
+        for lower, upper, ramp, vector in self._boxes:
+            weight = _weight(lower, upper, ramp, x, y, z)
+            if weight > 0.0:
+                mx += weight * vector[0]
+                my += weight * vector[1]
+                mz += weight * vector[2]
+        return mx, my, mz
 
     def step(self, position, velocity, dt: float) -> np.ndarray:
-        """Wind at ``position`` for the next ``dt``; the noise is drawn even when sigma is 0."""
+        """Wind at ``position`` for the next ``dt``; the noise is drawn even when sigma is 0.
+
+        The draw stays exactly one ``standard_normal(3)`` per step whatever the
+        wind is, so two runs of the same seed meet the same noise sequence.
+        """
         noise = self.rng.standard_normal(3)
-        mean = self.mean(position)
-        airspeed = max(float(np.linalg.norm(np.asarray(velocity) - mean)), MIN_AIRSPEED_M_S)
-        decay = np.exp(-dt * airspeed / self.length)
-        self.turbulence = decay * self.turbulence + self.sigma * np.sqrt(1 - decay**2) * noise
-        return mean + self.turbulence
+        mx, my, mz = self._mean(float(position[0]), float(position[1]), float(position[2]))
+        dx, dy, dz = float(velocity[0]) - mx, float(velocity[1]) - my, float(velocity[2]) - mz
+        airspeed = max((dx * dx + dy * dy + dz * dz) ** 0.5, MIN_AIRSPEED_M_S)
+        out = np.empty(3)
+        turbulence = []
+        for axis in range(3):
+            decay = math.exp(-dt * airspeed / self._length[axis])
+            value = (decay * self._turbulence[axis]
+                     + self._sigma[axis] * math.sqrt(1.0 - decay * decay) * noise[axis])
+            turbulence.append(value)
+            out[axis] = value
+        self._turbulence = tuple(turbulence)
+        self.turbulence = np.array(self._turbulence)
+        out[0] += mx
+        out[1] += my
+        out[2] += mz
+        return out
 
     def realization(self) -> dict:
         return {"zone_wind_m_s": {zone.name: vector.tolist() for zone, vector in zip(self.zones, self.zone_wind)}}

@@ -113,13 +113,19 @@ def hard_reset_timeout(budget_s: float) -> float:
 
 
 def hard_act_timeout(budget_s: float) -> float:
-    """act() calls this slow are not late but hung: the worker is killed and the run ends."""
-    return max(0.5, 25 * budget_s)
+    """act() calls this slow are not late but hung: the worker is killed and the run ends.
+
+    This one limit is wall-clock, unlike the budget itself, so it is the only
+    place where a loaded scoring machine can touch a result. Scoring runs one
+    evaluation per physical core, and a controller that is merely descheduled
+    gets its CPU back long before this; the floor is high enough that reaching
+    it means the call is not slow but stuck.
+    """
+    return max(5.0, 25 * budget_s)
 
 
 def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(), observer=None, *,
-                debug: bool = False, budget_scale: float = 1.0, cpu=None, command_prefix=None,
-                mount_root=None, stderr=None, isolation: str | None = None) -> dict:
+                debug: bool = False, budget_scale: float = 1.0, cpu=None, stderr=None) -> dict:
     """Simulate one race.
 
     ``budget_scale`` multiplies config.act_budget_s/reset_budget_s, to emulate the
@@ -162,7 +168,7 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
     handle = None
     try:
         handle = (InlineController(sub) if debug else
-                  WorkerController(sub, command_prefix=command_prefix, mount_root=mount_root, cpu=cpu, stderr=stderr))
+                  WorkerController(sub, cpu=cpu, stderr=stderr))
         modules = handle.hello.get("modules", [])
         reply = handle.reset(config, timeout=hard_reset_timeout(config.reset_budget_s * budget_scale))
         init_time, modules = reply["elapsed"], reply.get("modules", modules)
@@ -258,12 +264,12 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
         handle.close()
     if status == "timeout":
         events.append({"kind": "timeout", "time_s": time_s, "gate": rules.next_gate, "lap": rules.lap})
-    return _log(config, scenario, sub, digest, debug, isolation, budget, enforced, wind.realization(), records, events,
+    return _log(config, scenario, sub, digest, debug, budget, enforced, wind.realization(), records, events,
                 act_times, misses, status, error, time_s, rules, peak_load, peak_tilt, init_time, modules, started,
                 battery, saturated)
 
 
-def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, realization, records, events,
+def _log(config, scenario, sub, digest, debug, budget, enforced, realization, records, events,
          act_times, misses, status, error, time_s, rules, peak_load, peak_tilt, init_time, modules, started,
          battery, saturated):
     lap_ends = [e["time_s"] for e in events if e["kind"] == "lap_completed"]
@@ -298,7 +304,7 @@ def _log(config, scenario, sub, digest, debug, isolation, budget, enforced, real
         "realization": realization,
         "provenance": {
             "submission_sha256": digest, "submission": sub.entry.name if sub.entry.name != "controller.py" else sub.root.name,
-            "isolation": isolation or ("inline" if debug else "process"),
+            "isolation": "inline" if debug else "process",
             "third_party_modules": modules, "python": platform.python_version(),
             "machine": {"platform": platform.platform(), "processor": platform.processor() or platform.machine(),
                         "cpus": os.cpu_count()},

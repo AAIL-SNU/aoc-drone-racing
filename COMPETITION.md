@@ -110,7 +110,7 @@ Flying hard drains the pack faster, and both a drained pack (lower V_oc) and a l
 ## 7. Compute resources and fairness
 
 - **One machine, one team at a time.** All submissions are scored on the same Linux server, sequentially, never in parallel, so timing is comparable.
-- **Isolation.** The controller runs in a separate process and exchanges only observations and actions with the simulator. On the scoring server it also runs in a Docker container with no network, a read-only file system (only `/tmp` is writable), one CPU core and 4 GB of memory.
+- **Isolation.** The controller runs in a separate process and exchanges only observations and actions with the simulator. On the scoring server each evaluation is pinned to one physical core, numerical libraries are limited to one thread, and memory is capped.
 - **One thread, no GPU.** BLAS, OpenMP, numba, JAX and similar libraries are fixed to one thread, and the process is pinned to one core. Run neural networks on the CPU. Train offline on your own machine and submit the weights in `assets/`.
 - **Python packages.** The official environment is Python 3.12.12 with the versions pinned in `requirements.txt`. If you need a package that is not listed, ask the TAs at least one week before the competition. The list is frozen after that.
 - **50 Hz compute budget.**

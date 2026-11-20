@@ -113,6 +113,44 @@ class RaceRules:
         self.count = len(track.gates)
         self.progress = 0              # gates passed in order since the start
         self._touching = set()         # gates in contact at the end of the last segment
+        self._centers, self._reach = self._gate_bounds()
+
+    def _gate_bounds(self):
+        """Centre and a bounding radius per gate, for rejecting distant gates.
+
+        Every event a gate can produce happens within this radius of its centre:
+        a frame contact is inside the radius-expanded bars, and a counted
+        crossing has to land inside the opening. A segment that stays further
+        away than this cannot produce either, so the exact tests can be skipped
+        for it. Gate-local coordinates are a rotation and a translation, so a
+        distance measured from the centre means the same in both frames.
+        """
+        centers, reach = [], []
+        for gate in self.track.gates:
+            far = 0.0
+            for box in frame_boxes(gate):
+                lo = np.asarray(box.lower) - self.radius
+                hi = np.asarray(box.upper) + self.radius
+                far = max(far, float(np.linalg.norm(np.maximum(np.abs(lo), np.abs(hi)))))
+            opening = np.hypot(gate.width_m / 2, gate.height_m / 2)
+            centers.append(np.asarray(gate.center, dtype=float))
+            reach.append(max(far, float(opening)))
+        empty = np.empty((0, 3))
+        return (np.array(centers) if centers else empty,
+                np.array(reach) if reach else np.empty(0))
+
+    def _near_gates(self, start, end):
+        """Indices of the gates this segment comes close enough to matter to."""
+        if not self.count:
+            return ()
+        a, b = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+        d = b - a
+        length2 = float(d @ d)
+        offset = self._centers - a
+        # Closest approach of the segment to each centre, all gates at once.
+        t = np.clip(offset @ d / length2, 0.0, 1.0) if length2 > 0.0 else np.zeros(self.count)
+        gap = offset - t[:, None] * d
+        return np.nonzero(np.einsum("ij,ij->i", gap, gap) <= self._reach ** 2)[0]
 
     @property
     def next_gate(self) -> int:
@@ -146,7 +184,15 @@ class RaceRules:
 
     def _candidates(self, start, end):
         candidates = []
-        for index, gate in enumerate(self.track.gates):
+        # Every gate was tested exactly against every bar on every 2 ms physics
+        # step - forty segment-box intervals a step, almost all of them against
+        # gates metres away. One distance test per gate rejects those, and a
+        # rejected gate is by construction not being touched.
+        near = self._near_gates(start, end)
+        self._touching.intersection_update(near.tolist() if self.count else [])
+        for index in near:
+            gate = self.track.gates[index]
+            index = int(index)
             candidates += [RuleEvent("gate_collision", f, index) for f in self._contacts(index, gate, start, end)]
             forward = plane_crossing(start, end, gate, forward=True)
             if forward is not None and inside_opening(forward[1], gate, 0.0):

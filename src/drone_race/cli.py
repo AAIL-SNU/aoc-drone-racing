@@ -99,17 +99,6 @@ def main():
     bench.add_argument("--controller", default="submission")
     bench.add_argument("--race", default=DEFAULT_RACE)
     bench.add_argument("--seconds", type=float, default=10.0, help="Simulated seconds of your controller to time")
-    bench.add_argument("--write-reference", action="store_true", help="TAs: store this machine as the official one")
-
-    ev = sub.add_parser("evaluate", help="Official scoring of every team folder in a directory")
-    ev.add_argument("submissions", help="Directory with one sub-folder per team")
-    ev.add_argument("--race", required=True)
-    ev.add_argument("--seed", type=int, default=None, help="Overrides the race file's disturbance seed")
-    ev.add_argument("--laps", type=int, default=None)
-    ev.add_argument("--out", default="outputs/evaluation")
-    ev.add_argument("--cpu", type=int, default=None, help="Pin each controller to this CPU core (Linux)")
-    ev.add_argument("--docker", default=None, metavar="IMAGE", help="Run each controller in this Docker image")
-    ev.add_argument("--teams", nargs="+", default=None, help="Only these team folders")
 
     play = sub.add_parser("replay", help="Visualize a saved log without simulation")
     play.add_argument("log")
@@ -173,25 +162,12 @@ def main():
             print(f"  saved          {Path(args.output).resolve()}")
         return
     if args.command == "check":
-        from .evaluate import check as run_check
+        from .check import check as run_check
         sys.exit(0 if run_check(args.controller, args.race if Path(args.race).exists() else None) else 1)
     if args.command == "bench":
         from .bench import bench as run_bench
-        run_bench(args.controller, args.race, seconds=args.seconds, write_reference=args.write_reference)
+        run_bench(args.controller, args.race, seconds=args.seconds)
         return
-    if args.command == "evaluate":
-        from .evaluate import evaluate
-        rows = evaluate(args.submissions, args.race, args.out, seed=args.seed, laps=args.laps, cpu=args.cpu,
-                        docker_image=args.docker, teams=args.teams)
-        print(f"\n{'rank':>4}  {'team':<20} {'status':<18} {'score [s]':>10} {'laps':>6} {'fastest':>8}")
-        for row in rows:
-            score = f"{row['score_s']:.2f}" if row["score_s"] is not None else "-"
-            fastest = f"{row['fastest_lap_s']:.2f}" if row["fastest_lap_s"] is not None else "-"
-            print(f"{row['rank']:>4}  {row['team']:<20} {row['status']:<18} {score:>10} "
-                  f"{row['laps_completed']:>2}/{row['laps_total']:<3} {fastest:>8}")
-        print(f"\nLeaderboard: {(Path(args.out) / 'leaderboard.json').resolve()}")
-        return
-
     name, config, scenario = _race(args)
     submission_name = Path(args.controller).resolve()
     submission_name = submission_name.stem if submission_name.suffix == ".py" else submission_name.name
