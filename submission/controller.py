@@ -1,7 +1,7 @@
 """Your controller. Replace the body of reset() and act() below.
-As shipped it only holds the start position; examples/ holds complete controllers to start from.
+As shipped it only holds the start position; examples/pd_controller.py is a complete controller to start from.
 
-Only the submission/ folder is collected. See COMPETITION.md for the rules.
+Only this submission/ folder is evaluated: upload it on the practice server. See COMPETITION.md for the rules.
 
 Conventions: SI units, world frame right-handed z-up, gravity (0, 0, -9.81) m/s^2,
 quaternions (x, y, z, w) rotating body -> world. Body +z is the thrust axis.
@@ -14,7 +14,7 @@ reset(config: PublicConfig) is called once before flight with:
     config.track.bounds       Box the vehicle must stay inside, minus vehicle_radius_m
     config.track.start        initial hover position [m]
     config.control_dt_s       0.02, act() period; the action is held for this long
-    config.nominal_mass_kg    0.5 (the true mass may differ in disturbed scenarios)
+    config.nominal_mass_kg    0.5
     config.gravity_m_s2       9.81
     config.thrust_min_N/max_N 0 / 15, max_N is the limit at full charge (see observation.thrust_limit_N)
     config.body_rate_limit_rad_s   3, per axis

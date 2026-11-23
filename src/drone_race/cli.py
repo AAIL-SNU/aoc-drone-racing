@@ -75,7 +75,7 @@ def _print_summary(s, log_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Drone racing competition: simulate, check, benchmark and score controllers")
+    parser = argparse.ArgumentParser(description="Drone racing competition: simulate, check and score controllers")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="Simulate and self-grade one submission")
@@ -87,18 +87,11 @@ def main():
     run.add_argument("--speed", type=float, default=1.0, help="Playback speed of the window (1 = real time)")
     run.add_argument("--debug", action="store_true",
                      help="Run the controller inside this process (breakpoints work; timing is not enforced)")
-    run.add_argument("--budget-scale", type=float, default=None,
-                     help="Multiply the act()/reset() budgets (default: the calibration saved by `bench`)")
 
     check = sub.add_parser("check", help="Check a submission before handing it in")
     check.add_argument("controller", nargs="?", default="submission",
                        help="Folder with controller.py (default submission/) or a .py file")
     check.add_argument("--race", default=DEFAULT_RACE)
-
-    bench = sub.add_parser("bench", help="Estimate act() timing on the official machine")
-    bench.add_argument("--controller", default="submission")
-    bench.add_argument("--race", default=DEFAULT_RACE)
-    bench.add_argument("--seconds", type=float, default=10.0, help="Simulated seconds of your controller to time")
 
     play = sub.add_parser("replay", help="Visualize a saved log without simulation")
     play.add_argument("log")
@@ -164,32 +157,19 @@ def main():
     if args.command == "check":
         from .check import check as run_check
         sys.exit(0 if run_check(args.controller, args.race if Path(args.race).exists() else None) else 1)
-    if args.command == "bench":
-        from .bench import bench as run_bench
-        run_bench(args.controller, args.race, seconds=args.seconds)
-        return
     name, config, scenario = _race(args)
     submission_name = Path(args.controller).resolve()
     submission_name = submission_name.stem if submission_name.suffix == ".py" else submission_name.name
     log_path = Path(args.log or f"outputs/{submission_name}_{name}.json")
     print(f"{submission_name} on {config.track.name}: {config.laps} lap(s), seed {scenario.seed}, "
           f"{len(scenario.wind_zones)} wind zone(s), turbulence {scenario.turbulence_m_s} m/s")
-    budget_scale = args.budget_scale
     if args.debug:
         print("timing: not enforced (--debug)")
-    elif budget_scale is None:
-        from .bench import load_calibration
-        calibration = load_calibration()
-        if calibration:
-            budget_scale = calibration["budget_scale"]
-            print(f"timing: {1e3 * config.act_budget_s:.0f} ms on the scoring server = "
-                  f"{1e3 * config.act_budget_s * budget_scale:.1f} ms on this computer (calibrated {calibration['measured']})")
-        else:
-            print(f"timing: {1e3 * config.act_budget_s:.0f} ms budget, NOT calibrated -- run `drone-race bench` once "
-                  "so it matches the scoring server")
+    else:
+        print(f"timing: {1e3 * config.act_budget_s:.0f} ms CPU per act(), measured on this computer "
+              "(the practice server shows the timing on the scoring hardware)")
     print("simulating..." + ("" if args.headless else " (the window opens when the race is over)"), flush=True)
-    log = run_episode(args.controller, config, scenario, observer=_progress(config.laps),
-                      debug=args.debug, budget_scale=budget_scale or 1.0)
+    log = run_episode(args.controller, config, scenario, observer=_progress(config.laps), debug=args.debug)
     save_log(log, log_path)
     laps = log["summary"]["lap_times_s"]
     if log["summary"]["completed"] and laps:      # the observer never sees a lap start after the last one
