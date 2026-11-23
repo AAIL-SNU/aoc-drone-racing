@@ -11,8 +11,8 @@ This document is the rulebook: the race, the vehicle, the disturbances, the cons
 
 ## 2. Schedule and procedure
 
-1. The repository is released two weeks before the competition. Each participant clones it and implements a controller. Until the deadline, controllers uploaded to the shared practice server are flown on `config/server_evaluation_race.json` (a practice race drawn the same way as the official one, but on a known track and seed).
-2. Submissions (the `submission/` folder) are due through GitHub (or eTL) on the night two days before the competition.
+1. The repository is released two weeks before the competition. Each participant clones it and implements a controller. Until the deadline, every version uploaded to the practice server is flown on all five shipped tracks with the settings of `config/server_evaluation_race.json` (practice races drawn the same way as the official one, but with a known seed).
+2. Submissions are made on the practice server: select an uploaded version and press **Final submit**. The last version confirmed before the deadline, on the night two days before the competition, is the entry.
 3. The TAs run every submission on the official Linux server, all on **the same circuit with the same disturbance**, and record times and scores.
 4. A video is rendered from each participant's flight trajectory.
 5. On competition day the running order is drawn at random. The videos are played in that order on the dashboard web page, and the leaderboard is updated live. The dashboard shows the flight video together with the flight path, lap times and fastest lap.
@@ -116,9 +116,9 @@ Flying hard drains the pack faster, and both a drained pack (lower V_oc) and a l
 - **50 Hz compute budget.**
   - `act()` must return within **20 ms on the official server**. Time is measured as the CPU time of the whole controller process, so OS preemption never makes a call late, and extra threads only use up the budget faster. Each call is charged all CPU the process used since the previous call returned, so work done by background threads between calls counts too.
   - A late call's result is **dropped**. Simulated time keeps running while the controller computes: the previous action stays applied for as many 20 ms periods as the call took (rounded up), and the next observation comes after that. Each late call counts as one `deadline_misses`.
-  - An `act()` call that takes longer than 0.5 s is treated as hung and ends the run (`controller_timeout`).
+  - An `act()` call that has not returned after 5 s of wall-clock time is treated as hung and ends the run (`controller_timeout`).
   - Importing the submission and `reset()` together may use up to **60 s** of CPU time; exceeding it ends the run before the start (`controller_timeout`). Use `reset()` for offline trajectory optimization or JIT compilation.
-- **Laptop vs. server.** `drone-race bench` estimates the speed ratio between your computer and the official server and makes `drone-race run` enforce an equivalent budget locally (see README). It is an estimate: keep at least 30 % margin at the p99 `act()` time. Before the competition, the TAs will run practice submissions on the official server and share the measured timing.
+- **Laptop vs. server.** `drone-race run` enforces the 20 ms budget on your own computer, which may be faster or slower than the server. The practice server runs on the scoring hardware and shows the timing measured there; keep at least 30 % margin at the p99 `act()` time.
 
 ## 8. Submission rules
 
@@ -129,8 +129,8 @@ submission/
   assets/              # optional data: weights, precomputed trajectories, ...
 ```
 
-- Only the `submission/` folder is collected. Changes to the simulator (`src/drone_race/`) or any other file are not used for scoring.
-- The whole folder must be **50 MB or less**; a larger submission is disqualified (ranked as not finished).
+- Only the uploaded submission (`controller.py`, or a ZIP of the `submission/` folder) is evaluated. Changes to the simulator (`src/drone_race/`) or any other file are not used for scoring.
+- The whole submission must be **50 MiB or less**; the practice server rejects a larger upload.
 - At run time the working directory is `submission/`, so relative paths such as `open("assets/weights.npz")` work.
 - Only the Python standard library, the packages in `requirements.txt` and `drone_race` itself may be imported.
 - `drone-race check` must end with `OK` before you submit.

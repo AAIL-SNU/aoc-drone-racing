@@ -128,9 +128,8 @@ def run_episode(submission, config: PublicConfig, scenario: Scenario = Scenario(
                 debug: bool = False, budget_scale: float = 1.0, cpu=None, stderr=None) -> dict:
     """Simulate one race.
 
-    ``budget_scale`` multiplies config.act_budget_s/reset_budget_s, to emulate the
-    official machine on a faster or slower computer (see ``drone-race bench``).
-    Timing: act() is called every control_dt_s of simulated time and its action is applied
+    ``budget_scale`` multiplies config.act_budget_s/reset_budget_s (tests use it to
+    relax the deadline). Timing: act() is called every control_dt_s of simulated time and its action is applied
     one control step later (actuation delay). A call longer than the budget is dropped:
     the previous action is held for as many control steps as the call took, and the next
     observation comes after that.

@@ -75,7 +75,7 @@ def check(submission, race_path=None, *, seconds=3.0, progress=print) -> bool:
              + (f" -- {s['error']}" if s["error"] else ""))
     progress(f"  reset {s['controller_reset_s']:.2f} s (budget {config.reset_budget_s:.0f} s), "
              f"act mean {1e3 * s['controller_mean_act_s']:.1f} ms, p99 {1e3 * s['controller_p99_act_s']:.1f} ms "
-             f"(budget {1e3 * config.act_budget_s:.0f} ms on the official machine; run `drone-race bench`)")
+             f"(budget {1e3 * config.act_budget_s:.0f} ms on the scoring server; the practice server measures it there)")
     ok &= not crashed
     used = log["provenance"]["third_party_modules"]
     if pins:

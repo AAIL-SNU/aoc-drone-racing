@@ -15,9 +15,9 @@ Write a controller that flies **5 laps of a fixed circuit as fast as possible** 
 | `examples/` | A slow PD example controller to start from | Copy from it |
 | `config/tracks/` | The five shipped tracks, named `<shape>.json` (with `"name": "<shape>_track"` inside): `eight`, `twisted_eight`, `inner_loop`, `trefoil`, `coaster`. The official circuit is one of them with its gates moved at random (COMPETITION.md Section 3). Each `.png` beside a track is its picture (top view, 3D view, altitude profile) | No |
 | `config/race.json` | The default race (track + laps + disturbance) that `drone-race run` flies. Edit it to experiment; `git checkout config/race.json` restores it | Yes, to experiment |
-| `config/server_evaluation_race.json` | The race the shared practice server flies every upload on. Run it locally with `--race` to reproduce a server result | No |
+| `config/server_evaluation_race.json` | The settings (laps, randomization, seed) the practice server flies every upload with, on each of the five tracks | No |
 | `src/drone_race/` | Simulator, referee, scoring, helper modules, the `drone-race` command | No (changes are not used for scoring) |
-| `outputs/` | Everything `drone-race` writes: run logs, calibration | Generated |
+| `outputs/` | Everything `drone-race` writes: run logs, track pictures | Generated |
 
 ## Installation
 
@@ -143,7 +143,7 @@ The default race is `config/race.json`. A race file bundles a track, the number 
 
 `track` is relative to the race file. The scenario fields are defined by `Scenario` in `src/drone_race/env.py` and `WindZone` in `src/drone_race/wind.py`. `--laps`, `--seed`, `--turbulence`, `--calm` and `--max-time` override the file. To experiment, edit `config/race.json` (another of the five tracks, larger moves, stronger turbulence) or keep variants as separate files and pass them with `--race`. The laps, turbulence and randomization amounts in the shipped file match the official race.
 
-The shared practice server does not read your `config/race.json`: it flies every upload on `config/server_evaluation_race.json`. To reproduce a server result locally, run `drone-race run --race config/server_evaluation_race.json`.
+The practice server does not read your `config/race.json`. It flies every upload on all five tracks, one after another, each with the settings of `config/server_evaluation_race.json`. That file names `eight`, so `drone-race run --race config/server_evaluation_race.json` reproduces the first course; for another course, copy the file within `config/`, change its `"track"` (e.g. `"tracks/trefoil.json"`) and pass the copy with `--race`.
 
 ### Logs
 
@@ -156,19 +156,21 @@ Every run is saved as JSON in `outputs/` (`outputs/<submission>_<race>.json` unl
 
 ## Timing on your computer
 
-`act()` must fit in 20 ms **on the scoring server** (see COMPETITION.md). Your computer is not the scoring server, so calibrate it once:
-
-```bash
-drone-race bench
-```
-
-`bench` times three fixed workloads (controllers in `src/drone_race/bench_workloads/` that hover and do a fixed amount of NumPy, SciPy and plain-Python work per `act()`), compares them with the same measurement made on the scoring server, and saves the speed ratio to `outputs/calibration.json`. From then on `drone-race run` scales the 20 ms budget to this computer (e.g. 14 ms on a computer that is faster than the server), so a call that would be late on the server is also late locally. `run` prints which budget it used. `bench` also estimates your own controller's `act()` time on the server; keep about 30 % margin at p99. Use `--budget-scale` on `run` to override the calibration.
+`act()` must fit in 20 ms of CPU time **on the scoring server** (COMPETITION.md Section 7). `drone-race run` enforces the same 20 ms on your own computer, which may be faster or slower than the server, so local timing is only a guide. The practice server runs on the scoring hardware: check your `act()` times and late calls there before relying on a tight budget. `--debug` turns timing off.
 
 ## Checking a submission
 
 ```bash
 drone-race check                # layout, size, packages and a short flight: must end with "OK"
 ```
+
+## Submitting
+
+Submissions go through the practice server (address: **TBD**):
+
+1. Upload `submission/controller.py`, or a ZIP of `submission/` with your helper modules and `assets/` (at most 50 MiB and 1,500 files).
+2. Press **Play**. The server flies that version on the five tracks in turn and shows each course's score, timing and a replay.
+3. Select a version and press **Final submit**. The last version you confirm before the deadline is your competition entry (COMPETITION.md Section 2).
 
 ## Example controller
 
