@@ -174,7 +174,7 @@ drone-race check                # layout, size, packages and a short flight: mus
 
 ## Submitting
 
-Submit through the practice server, https://admin-aoc-drone-race-live.tailfeb8a3.ts.net/, by **Dec 8, 2026, 23:59 KST**:
+Submit through the practice server, https://admin-aoc-drone-race-live.tailfeb8a3.ts.net/, by **Dec 9, 2026, 12:00 KST**:
 
 1. Upload `submission/controller.py`, or a ZIP of `submission/` with `controller.py` and `assets/` (at most 50 MiB and 1,500 files).
 2. Press **Play**. The server flies that version on the five tracks in turn and shows each course's score, timing and a replay.
