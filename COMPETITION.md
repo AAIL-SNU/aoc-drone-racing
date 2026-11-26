@@ -33,7 +33,7 @@
 1. Clone this repo and implement your own controller.
 2. If you want to test the controller on the server computer (which will be used for competition for fair computation resource), submit your controller (`submission/`) to the [practice server](https://admin-aoc-drone-race-live.tailfeb8a3.ts.net/). Then your controller will be run on the server, and the computation time will be measured and provided.
 3. Select the version that you would like to submit and press **Final submit**.
-4. Submissions are made on the practice server: the last version confirmed by the deadline, **Dec 8, 2026, 23:59 KST**, is the entry.
+4. Submissions are made on the practice server: the last version confirmed by the deadline, **Dec 9, 2026, 12:00 KST**, is the entry.
 5. On the competition day (**Dec 10, 2026**), the track and disturbance will be determined by a random seed, and your submitted controller will be run with this setting, with video rendered.
 
 ## 3. The race
